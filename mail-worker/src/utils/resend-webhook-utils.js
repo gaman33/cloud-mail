@@ -1,7 +1,6 @@
 const WEBHOOK_SECRET_KEYS = [
 	'resend_webhook_secret_polyurea',
-	'resend_webhook_secret_coating',
-	'resend_webhook_secret'
+	'resend_webhook_secret_coating'
 ];
 
 export function configuredWebhookSecrets(env = {}) {

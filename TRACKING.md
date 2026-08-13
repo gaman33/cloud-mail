@@ -15,7 +15,7 @@ This fork stores delivery, open, click, bounce, complaint, delay, and failure ev
    wrangler secret put resend_webhook_secret_coating
    ```
 
-   Both Resend accounts may point to the same endpoint URL. Each account must keep its own signing secret. The legacy `resend_webhook_secret` variable remains supported for single-account deployments and safe migrations.
+   Both Resend accounts point to the same endpoint URL. Each account must keep its own signing secret; the two account-specific Worker secrets are required.
 
 6. Set Cloud Mail's existing `customDomain` setting to the public Worker domain. This domain is used for the tracking pixel URL. It must serve this Worker over HTTPS.
 

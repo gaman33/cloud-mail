@@ -81,18 +81,18 @@
             </template>
             <div v-else class="tracking-empty">{{ $t('trackingNotAvailable') }}</div>
           </div>
-          <el-scrollbar class="htm-scrollbar" :class="email.attList.length === 0 ? 'bottom-distance' : ''">
+          <el-scrollbar class="htm-scrollbar" :class="displayAttachments.length === 0 ? 'bottom-distance' : ''">
             <ShadowHtml class="shadow-html" :html="formatImage(email.content)" v-if="email.content" />
             <pre v-else class="email-text" >{{email.text}}</pre>
           </el-scrollbar>
-          <div class="att" v-if="email.attList.length > 0">
+          <div class="att" v-if="displayAttachments.length > 0">
             <div class="att-title">
               <span>{{$t('attachments')}}</span>
-              <span>{{$t('attCount',{total: email.attList.length})}}</span>
+              <span>{{$t('attCount',{total: displayAttachments.length})}}</span>
             </div>
             <div class="att-box">
 
-              <div class="att-item" v-for="att in email.attList" :key="att.attId">
+              <div class="att-item" v-for="att in displayAttachments" :key="att.attId">
                 <div class="att-icon" @click="showImage(att.key)">
                   <Icon v-bind="getIconByName(att.filename)" />
                 </div>
@@ -145,7 +145,7 @@ const settingStore = useSettingStore();
 const accountStore = useAccountStore();
 const emailStore = useEmailStore();
 const router = useRouter()
-const email = emailStore.contentData.email
+const email = emailStore.contentData.email || {}
 const showPreview = ref(false)
 const srcList = reactive([])
 const trackingLoading = ref(false)
@@ -153,6 +153,8 @@ const trackingData = reactive({tracked: false, recipientEmail: '', openCount: 0,
 const trackingExpanded = ref(false)
 const trackingShowAll = ref(false)
 const collapsedEventLimit = 5
+const displayAttachments = computed(() => (Array.isArray(email.attList) ? email.attList : [])
+  .filter(att => att && typeof att.filename === 'string' && att.filename.trim()))
 
 const orderedTrackingEvents = computed(() => [...trackingData.events].reverse())
 const visibleTrackingEvents = computed(() => trackingShowAll.value ? orderedTrackingEvents.value : orderedTrackingEvents.value.slice(0, collapsedEventLimit))
@@ -210,8 +212,13 @@ function isImage(filename) {
 }
 
 function formateReceive(recipient) {
-  recipient = JSON.parse(recipient)
-  return recipient.map(item => item.address).join(', ')
+  if (Array.isArray(recipient)) return recipient.map(item => item?.address || item).filter(Boolean).join(', ')
+  try {
+    const parsed = JSON.parse(recipient || '[]')
+    return Array.isArray(parsed) ? parsed.map(item => item?.address || item).filter(Boolean).join(', ') : String(recipient || '')
+  } catch {
+    return String(recipient || '')
+  }
 }
 
 function loadTracking() {
