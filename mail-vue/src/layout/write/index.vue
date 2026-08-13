@@ -63,7 +63,7 @@
             </template>
           </el-dropdown>
         </div>
-        <tinyEditor :def-value="defValue" ref="editor" @change="change" @focus="focusChange" />
+        <tinyEditor class="compose-editor" :def-value="defValue" ref="editor" @change="change" @focus="focusChange" />
         <div class="button-item">
           <div class="att-add" @click="chooseFile">
             <Icon icon="iconamoon:attachment-fill" width="24" height="24"/>
@@ -548,7 +548,7 @@ function openReply(email) {
         ${formatDetailDate(email.createTime)} ${email.name} &lt${email.sendEmail}&gt ${t('wrote')}:
     </div>
     <blockquote class="mceNonEditable" style="margin: 0 0 0 0.8ex;border-left: 1px solid rgb(204,204,204);padding-left: 1ex;">
-      <articl>
+      <article>
           ${formatImage(email.content) || `<pre style="font-family: inherit;word-break: break-word;white-space: pre-wrap;margin: 0">${email.text}</pre>`}
       </article>
     </blockquote>`
@@ -759,8 +759,9 @@ function close() {
 
     .container {
       height: 100%;
+      min-height: 0;
       display: grid;
-      grid-template-rows: auto auto 1fr auto;
+      grid-template-rows: auto auto auto minmax(0, 1fr) auto;
       gap: 15px;
 
       .item-title {
@@ -840,6 +841,11 @@ function close() {
   gap: 12px;
   flex-wrap: wrap;
   padding: 8px 0;
+}
+
+.compose-editor {
+  min-height: 0;
+  overflow: hidden;
 }
 
 .add-contact {
