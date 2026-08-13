@@ -58,6 +58,10 @@ const routers = {
                 menu: true
             }
         }
+        ,{
+            path: '/reliability', name: 'reliability', component: () => import('@/views/reliability/index.vue'),
+            meta: {title: 'mailReliability', name: 'reliability', menu: true}
+        }
     ],
     'user:query': [{
         path: '/all-users',

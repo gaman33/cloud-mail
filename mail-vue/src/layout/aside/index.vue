@@ -21,6 +21,9 @@
           <Icon icon="ep:document" width="19" height="19" />
           <span class="menu-name" style="margin-left: 22px">{{$t('drafts')}}</span>
         </el-menu-item>
+        <el-menu-item @click="router.push({name: 'reliability'})" index="reliability" v-perm="'email:send'" :class="route.meta.name === 'reliability' ? 'choose-item' : ''">
+          <Icon icon="mdi:shield-check-outline" width="20" height="20"/><span class="menu-name" style="margin-left:21px">{{$t('mailReliability')}}</span>
+        </el-menu-item>
         <el-menu-item @click="router.push({name: 'star'})" index="star"
                       :class="route.meta.name === 'star' ? 'choose-item' : ''">
           <Icon icon="solar:star-line-duotone" width="20" height="20" />

@@ -336,7 +336,63 @@ const en = {
     searchUser: 'Search by user',
     searchEmail: 'Search by Email',
     searchSender: 'Search by Sender',
-    userEmail: 'Email Address'
+    userEmail: 'Email Address',
+    tracking: 'Email tracking',
+    openCount: 'Opens',
+    clickCount: 'Clicks',
+    opened: 'Opened',
+    clicked: 'Link clicked',
+    suppressed: 'Suppressed',
+    loading: 'Loading...',
+    noTrackingEvents: 'No tracking events yet',
+    trackingNotAvailable: 'Tracking is not available for this message',
+    trackingPrivacyNote: 'IP and location may belong to a mail privacy proxy or image cache and do not prove that the recipient personally read the message.'
+    ,emailSignature: 'Email signature'
+    ,enableSignature: 'Enable signature'
+    ,signatureOnReply: 'Include on replies'
+    ,requestReadReceipt: 'Request read receipt'
+    ,readReceiptHint: 'The recipient email client decides whether to send a receipt'
+    ,attachmentUploading: 'Attachment uploading'
+    ,attachmentUploadFailed: 'Attachment upload failed'
+    ,attachmentTooLarge: 'Each attachment must be 20 MB or smaller'
+    ,attachmentTotalTooLarge: 'Total attachment size must be 25 MB or smaller'
+    ,read_receipt: 'Read receipt received'
+    ,priority: 'Priority'
+    ,high: 'High'
+    ,normal: 'Normal'
+    ,low: 'Low'
+    ,emailTracking: 'Email tracking'
+    ,includeUnsubscribe: 'Include unsubscribe link'
+    ,templatesAndSnippets: 'Templates and snippets'
+    ,sendPreferences: 'Sending preferences'
+    ,defaultPriority: 'Default priority'
+    ,defaultTracking: 'Track messages by default'
+    ,defaultReadReceipt: 'Request read receipts by default'
+    ,defaultUnsubscribe: 'Include unsubscribe by default'
+    ,mailReliability: 'Mail reliability'
+    ,suppressedRecipients: 'Suppressed recipients'
+    ,contacts: 'Contacts'
+    ,tags: 'Tags'
+    ,suppressionList: 'Suppression list'
+    ,reason: 'Reason'
+    ,auditLog: 'Audit log'
+    ,time: 'Time'
+    ,operation: 'Operation'
+    ,type: 'Type'
+    ,name: 'Name'
+    ,edit: 'Edit'
+    ,content: 'Content'
+    ,deliverabilityCheck: 'Deliverability check'
+    ,domainName: 'Domain name'
+    ,check: 'Check'
+    ,nextFollowUp: 'Next follow-up'
+    ,editContact: 'Edit contact'
+    ,commaSeparated: 'Separate tags with commas'
+    ,notes: 'Notes'
+    ,sendQueue: 'Send queue'
+    ,attempts: 'Attempts'
+    ,nextRetry: 'Next retry'
+    ,retry: 'Retry'
 }
 
 export default en

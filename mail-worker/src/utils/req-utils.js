@@ -6,9 +6,7 @@ const reqUtils = {
 			'Unknown';
 	},
 
-	getUserAgent(c) {
-		const ua = c.req.header('user-agent') || '';
-
+	parseUserAgent(ua = '') {
 		const parser = new UAParser(ua);
 		const { browser, device, os } = parser.getResult();
 
@@ -39,6 +37,10 @@ const reqUtils = {
 		}
 
 		return {browser: browserInfo || '', device: deviceInfo || '', os: osInfo || ''}
+	},
+
+	getUserAgent(c) {
+		return this.parseUserAgent(c.req.header('user-agent') || '');
 	}
 }
 

@@ -13,13 +13,13 @@ const base64urlDecode = (str) => {
 };
 
 const jwtUtils = {
-	async generateToken(c, payload, expiresInSeconds) {
+	async generateToken(c, payload, expiresInSeconds, issuedAtSeconds) {
 		const header = {
 			alg: 'HS256',
 			typ: 'JWT'
 		};
 
-		const now = Math.floor(Date.now() / 1000);
+		const now = Number.isFinite(issuedAtSeconds) ? issuedAtSeconds : Math.floor(Date.now() / 1000);
 		const exp = expiresInSeconds ? now + expiresInSeconds : undefined;
 
 		const fullPayload = {

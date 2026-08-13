@@ -5,7 +5,7 @@ import {emailConst} from "../const/entity-const";
 const dbInit = {
 	async init(c) {
 
-		const secret = c.req.param('secret');
+		const secret = c.req.header('x-init-secret');
 
 		if (secret !== c.env.jwt_secret) {
 			return c.text('❌ JWT secret mismatch');
@@ -29,8 +29,130 @@ const dbInit = {
 		await this.v2_8DB(c);
 		await this.v2_9DB(c);
 		await this.v3_0DB(c);
+		await this.v3_1DB(c);
+		await this.v3_2DB(c);
+		await this.v4_0DB(c);
 		await settingService.refresh(c);
 		return c.text('success');
+	},
+
+	async migrate(c) {
+		await this.v3_1DB(c);
+		await this.v3_2DB(c);
+		await this.v4_0DB(c);
+		await settingService.refresh(c);
+		return {version: '4.0', migrated: true};
+	},
+
+	async v4_0DB(c) {
+		const columns = [
+			`ALTER TABLE email ADD COLUMN tracking_enabled INTEGER NOT NULL DEFAULT 1;`,
+			`ALTER TABLE email ADD COLUMN priority TEXT NOT NULL DEFAULT 'normal';`,
+			`ALTER TABLE email ADD COLUMN idempotency_key TEXT;`,
+			`ALTER TABLE email ADD COLUMN unsubscribe_enabled INTEGER NOT NULL DEFAULT 0;`,
+			`ALTER TABLE account ADD COLUMN default_priority TEXT NOT NULL DEFAULT 'normal';`,
+			`ALTER TABLE account ADD COLUMN default_tracking INTEGER NOT NULL DEFAULT 1;`,
+			`ALTER TABLE account ADD COLUMN default_read_receipt INTEGER NOT NULL DEFAULT 0;`,
+			`ALTER TABLE account ADD COLUMN default_unsubscribe INTEGER NOT NULL DEFAULT 0;`,
+			`ALTER TABLE setting ADD COLUMN tracking_retention_days INTEGER NOT NULL DEFAULT 90;`,
+			`ALTER TABLE setting ADD COLUMN audit_retention_days INTEGER NOT NULL DEFAULT 180;`,
+			`ALTER TABLE contact ADD COLUMN notes TEXT NOT NULL DEFAULT '';`,
+			`ALTER TABLE contact ADD COLUMN next_follow_up_time DATETIME;`
+		];
+		for (const statement of columns) {
+			try { await c.env.db.prepare(statement).run(); } catch (error) { console.warn(`Skip existing v4 column: ${error.message}`); }
+		}
+		const statements = [
+			`CREATE TABLE IF NOT EXISTS send_job (job_id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, account_id INTEGER NOT NULL, recipient_email TEXT NOT NULL, idempotency_key TEXT NOT NULL, payload TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0, max_attempts INTEGER NOT NULL DEFAULT 5, next_attempt_time DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, last_error TEXT NOT NULL DEFAULT '', email_id INTEGER, create_time DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, update_time DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL)`,
+			`CREATE UNIQUE INDEX IF NOT EXISTS idx_send_job_user_idempotency ON send_job(user_id, idempotency_key)`,
+			`CREATE INDEX IF NOT EXISTS idx_send_job_status_next ON send_job(status, next_attempt_time)`,
+			`CREATE TABLE IF NOT EXISTS suppression (suppression_id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, email TEXT NOT NULL, reason TEXT NOT NULL DEFAULT 'manual', source TEXT NOT NULL DEFAULT 'cloud_mail', active INTEGER NOT NULL DEFAULT 1, create_time DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, update_time DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL)`,
+			`CREATE UNIQUE INDEX IF NOT EXISTS idx_suppression_user_email ON suppression(user_id, email)`,
+			`CREATE INDEX IF NOT EXISTS idx_suppression_user_active ON suppression(user_id, active)`,
+			`CREATE TABLE IF NOT EXISTS mail_template (template_id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, name TEXT NOT NULL, type TEXT NOT NULL DEFAULT 'template', subject TEXT NOT NULL DEFAULT '', content TEXT NOT NULL DEFAULT '', text TEXT NOT NULL DEFAULT '', create_time DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, update_time DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL)`,
+			`CREATE INDEX IF NOT EXISTS idx_mail_template_user_type ON mail_template(user_id, type)`,
+			`CREATE TABLE IF NOT EXISTS contact (contact_id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, email TEXT NOT NULL, name TEXT NOT NULL DEFAULT '', tags TEXT NOT NULL DEFAULT '[]', notes TEXT NOT NULL DEFAULT '', next_follow_up_time DATETIME, last_contact_time DATETIME, create_time DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, update_time DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL)`,
+			`CREATE UNIQUE INDEX IF NOT EXISTS idx_contact_user_email ON contact(user_id, email)`,
+			`CREATE TABLE IF NOT EXISTS contact_event (contact_event_id INTEGER PRIMARY KEY AUTOINCREMENT, contact_id INTEGER NOT NULL, user_id INTEGER NOT NULL, email_id INTEGER, event_type TEXT NOT NULL, metadata TEXT NOT NULL DEFAULT '{}', create_time DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL)`,
+			`CREATE INDEX IF NOT EXISTS idx_contact_event_contact_time ON contact_event(contact_id, create_time)`,
+			`CREATE TABLE IF NOT EXISTS audit_log (audit_id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, action TEXT NOT NULL, target_type TEXT NOT NULL DEFAULT '', target_id TEXT NOT NULL DEFAULT '', ip TEXT NOT NULL DEFAULT '', metadata TEXT NOT NULL DEFAULT '{}', create_time DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL)`,
+			`CREATE INDEX IF NOT EXISTS idx_audit_log_user_time ON audit_log(user_id, create_time)`,
+			`CREATE UNIQUE INDEX IF NOT EXISTS idx_email_user_idempotency ON email(user_id, idempotency_key) WHERE idempotency_key IS NOT NULL`
+		];
+		await c.env.db.batch(statements.map(statement => c.env.db.prepare(statement)));
+	},
+
+	async v3_2DB(c) {
+		const accountColumns = [
+			`ALTER TABLE account ADD COLUMN signature_html TEXT NOT NULL DEFAULT '';`,
+			`ALTER TABLE account ADD COLUMN signature_text TEXT NOT NULL DEFAULT '';`,
+			`ALTER TABLE account ADD COLUMN signature_enabled INTEGER NOT NULL DEFAULT 0;`,
+			`ALTER TABLE account ADD COLUMN signature_on_reply INTEGER NOT NULL DEFAULT 1;`
+		];
+		for (const statement of accountColumns) {
+			try { await c.env.db.prepare(statement).run(); } catch (error) { console.warn(`Skip existing account column: ${error.message}`); }
+		}
+		try {
+			await c.env.db.prepare(`ALTER TABLE email ADD COLUMN read_receipt_requested INTEGER NOT NULL DEFAULT 0;`).run();
+		} catch (error) {
+			console.warn(`Skip existing email column: ${error.message}`);
+		}
+		await c.env.db.batch([
+			c.env.db.prepare(`CREATE TABLE IF NOT EXISTS attachment_upload (
+				upload_id INTEGER PRIMARY KEY AUTOINCREMENT,
+				user_id INTEGER NOT NULL,
+				token TEXT NOT NULL,
+				key TEXT NOT NULL,
+				filename TEXT NOT NULL,
+				mime_type TEXT NOT NULL DEFAULT 'application/octet-stream',
+				size INTEGER NOT NULL,
+				consumed INTEGER NOT NULL DEFAULT 0,
+				create_time DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL
+			)`),
+			c.env.db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_attachment_upload_token ON attachment_upload(token)`),
+			c.env.db.prepare(`CREATE INDEX IF NOT EXISTS idx_attachment_upload_user_consumed ON attachment_upload(user_id, consumed)`)
+		]);
+	},
+
+	async v3_1DB(c) {
+		const statements = [
+			`CREATE TABLE IF NOT EXISTS email_tracking (
+				tracking_id INTEGER PRIMARY KEY AUTOINCREMENT,
+				email_id INTEGER NOT NULL,
+				user_id INTEGER NOT NULL,
+				recipient_email TEXT NOT NULL DEFAULT '',
+				token TEXT NOT NULL,
+				provider_email_id TEXT,
+				create_time DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL
+			)`,
+			`CREATE UNIQUE INDEX IF NOT EXISTS idx_email_tracking_token ON email_tracking(token)`,
+			`CREATE INDEX IF NOT EXISTS idx_email_tracking_email_id ON email_tracking(email_id)`,
+			`CREATE TABLE IF NOT EXISTS email_event (
+				event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+				email_id INTEGER NOT NULL,
+				tracking_id INTEGER,
+				user_id INTEGER NOT NULL,
+				recipient_email TEXT NOT NULL DEFAULT '',
+				provider_event_id TEXT,
+				event_type TEXT NOT NULL,
+				event_time DATETIME NOT NULL,
+				ip TEXT NOT NULL DEFAULT '',
+				country TEXT NOT NULL DEFAULT '',
+				region TEXT NOT NULL DEFAULT '',
+				city TEXT NOT NULL DEFAULT '',
+				user_agent TEXT NOT NULL DEFAULT '',
+				browser TEXT NOT NULL DEFAULT '',
+				os TEXT NOT NULL DEFAULT '',
+				device TEXT NOT NULL DEFAULT '',
+				url TEXT NOT NULL DEFAULT '',
+				source TEXT NOT NULL DEFAULT '',
+				metadata TEXT NOT NULL DEFAULT '{}',
+				create_time DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL
+			)`,
+			`CREATE UNIQUE INDEX IF NOT EXISTS idx_email_event_provider_event_id ON email_event(provider_event_id)`,
+			`CREATE INDEX IF NOT EXISTS idx_email_event_email_id_time ON email_event(email_id, event_time)`
+		];
+		await c.env.db.batch(statements.map(statement => c.env.db.prepare(statement)));
 	},
 
 	async v3_0DB(c) {

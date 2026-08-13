@@ -12,6 +12,25 @@ import turnstileService from './turnstile-service';
 import roleService from './role-service';
 import { t } from '../i18n/i18n';
 import verifyRecordService from './verify-record-service';
+import { parseHTML } from 'linkedom';
+
+export function sanitizeSignatureHtml(value = '') {
+	const html = String(value || '').slice(0, 20000);
+	const { document } = parseHTML(`<div id="cloud-mail-signature-root">${html}</div>`);
+	const root = document.querySelector('#cloud-mail-signature-root');
+	if (!root) return '';
+	root.querySelectorAll('script,iframe,object,embed,form,base,meta').forEach(node => node.remove());
+	root.querySelectorAll('*').forEach(node => {
+		for (const attr of [...node.attributes]) {
+			const name = attr.name.toLowerCase();
+			const value = String(attr.value || '').trim().toLowerCase();
+			if (name.startsWith('on') || ((name === 'href' || name === 'src') && value.startsWith('javascript:'))) {
+				node.removeAttribute(attr.name);
+			}
+		}
+	});
+	return root.innerHTML;
+}
 
 const accountService = {
 
@@ -215,6 +234,39 @@ const accountService = {
 			throw new BizError(t('usernameLengthLimit'));
 		}
 		await orm(c).update(account).set({name}).where(and(eq(account.userId, userId),eq(account.accountId, accountId))).run();
+	},
+
+	async setSignature(c, params, userId) {
+		const accountId = Number(params.accountId);
+		const accountRow = await this.selectById(c, accountId);
+		if (!accountRow || accountRow.userId !== userId) {
+			throw new BizError(t('noUserAccount'), 403);
+		}
+		const signatureHtml = sanitizeSignatureHtml(params.signatureHtml);
+		const signatureText = String(params.signatureText || '').slice(0, 5000);
+		const signatureEnabled = params.signatureEnabled ? 1 : 0;
+		const signatureOnReply = params.signatureOnReply ? 1 : 0;
+		await orm(c).update(account).set({
+			signatureHtml,
+			signatureText,
+			signatureEnabled,
+			signatureOnReply
+		}).where(and(eq(account.userId, userId), eq(account.accountId, accountId))).run();
+		return { signatureHtml, signatureText, signatureEnabled, signatureOnReply };
+	},
+
+	async setSendPreferences(c, params, userId) {
+		const accountId = Number(params.accountId);
+		const accountRow = await this.selectById(c, accountId);
+		if (!accountRow || accountRow.userId !== userId) throw new BizError(t('noUserAccount'), 403);
+		const values = {
+			defaultPriority: ['high', 'normal', 'low'].includes(params.defaultPriority) ? params.defaultPriority : 'normal',
+			defaultTracking: params.defaultTracking ? 1 : 0,
+			defaultReadReceipt: params.defaultReadReceipt ? 1 : 0,
+			defaultUnsubscribe: params.defaultUnsubscribe ? 1 : 0
+		};
+		await orm(c).update(account).set(values).where(and(eq(account.userId, userId), eq(account.accountId, accountId))).run();
+		return values;
 	},
 
 	async allAccount(c, params) {
