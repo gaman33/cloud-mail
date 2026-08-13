@@ -49,7 +49,10 @@ crons = ["*/5 * * * *", "0 16 * * *"]	#每5分钟重试发件任务，每天刷�
 
 
 [vars]
-#resend_webhook_secret = "" # Resend webhook signing secret (whsec_...); required for /api/webhooks
+# Configure these as encrypted Worker secrets, not plain-text vars:
+# resend_webhook_secret_polyurea = "" # turean-polyurea.com Resend account (whsec_...)
+# resend_webhook_secret_coating = ""  # turean-coating.com Resend account (whsec_...)
+# resend_webhook_secret = ""          # legacy single-account fallback
 #ai_model = ""			#ai模型,不填默认使用@cf/meta/llama-3.1-8b-instruct
 #analysis_cache = false			#是否开启分析数据缓存
 #orm_log = false			#是否sql日志

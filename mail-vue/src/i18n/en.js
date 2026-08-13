@@ -347,6 +347,15 @@ const en = {
     noTrackingEvents: 'No tracking events yet',
     trackingNotAvailable: 'Tracking is not available for this message',
     trackingPrivacyNote: 'IP and location may belong to a mail privacy proxy or image cache and do not prove that the recipient personally read the message.'
+    ,trackingDelivered: 'Delivered'
+    ,trackingOpenedAt: 'Opened · {time}'
+    ,trackingLikelyLocation: 'Likely location · {location}'
+    ,trackingClickedAt: 'Clicked · {time}'
+    ,trackingReceiptAt: 'Read receipt · {time}'
+    ,trackingNoOpen: 'No open detected'
+    ,trackingNoOpenHint: 'Tracking is active, but no open has been detected. Opens may not be recorded when remote images are blocked.'
+    ,trackingOpenTooltip: '{count} opens detected; latest request IP: {ip}. Repeats may include mail proxies or image caches.'
+    ,trackingLocationTooltip: 'Likely location: {location}; IP: {ip}. This may belong to a mail proxy or image cache.'
     ,emailSignature: 'Email signature'
     ,enableSignature: 'Enable signature'
     ,signatureOnReply: 'Include on replies'
