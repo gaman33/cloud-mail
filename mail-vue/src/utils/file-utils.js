@@ -1,12 +1,14 @@
 import Compressor from "compressorjs";
 
 export function getExtName(fileName) {
+	if (typeof fileName !== 'string' || !fileName.trim()) return ''
     const index = fileName.lastIndexOf('.')
     return index !== -1 ? fileName.slice(index + 1).toLowerCase() : ''
 }
 
 export function formatBytes(bytes) {
-    if (bytes === 0) return '0 B';
+	bytes = Number(bytes)
+	if (!Number.isFinite(bytes) || bytes <= 0) return bytes === 0 ? '0 B' : '-';
     const k = 1024;
     const units = ['B', 'KB', 'MB', 'GB', 'TB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));

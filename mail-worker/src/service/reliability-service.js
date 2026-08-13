@@ -66,7 +66,40 @@ const reliabilityService = {
 		const statusRows = await orm(c).select({status: emailEntity.status, total: sql`count(*)`}).from(emailEntity).where(and(eq(emailEntity.userId, userId), eq(emailEntity.type, 1))).groupBy(emailEntity.status).all();
 		const eventRows = await orm(c).select({eventType: emailEvent.eventType, total: sql`count(*)`}).from(emailEvent).where(eq(emailEvent.userId, userId)).groupBy(emailEvent.eventType).all();
 		const suppressions = await orm(c).select({total: sql`count(*)`}).from(suppression).where(and(eq(suppression.userId, userId), eq(suppression.active, 1))).get();
-		return {statuses: statusRows, events: eventRows, suppressed: Number(suppressions?.total || 0)};
+		const jobRows = await orm(c).select({status: sendJob.status, total: sql`count(*)`}).from(sendJob).where(eq(sendJob.userId, userId)).groupBy(sendJob.status).all();
+		const statuses = Object.fromEntries(statusRows.map(row => [Number(row.status), Number(row.total || 0)]));
+		const events = Object.fromEntries(eventRows.map(row => [row.eventType, Number(row.total || 0)]));
+		const jobs = Object.fromEntries(jobRows.map(row => [row.status, Number(row.total || 0)]));
+		const sent = Number(statuses[1] || 0);
+		const delivered = Number(statuses[2] || 0);
+		const bounced = Number(statuses[3] || 0) + Number(statuses[8] || 0);
+		const complained = Number(statuses[4] || 0);
+		const delayed = Number(statuses[5] || 0);
+		const accepted = sent + delivered;
+		const openEvents = Number(events.opened || 0);
+		const clickEvents = Number(events.clicked || 0);
+		const trackedSent = Number(events.sent || 0);
+		const activeQueue = Number(jobs.pending || 0) + Number(jobs.processing || 0) + Number(jobs.retry || 0);
+		const failedQueue = Number(jobs.failed || 0);
+		const hasRisk = bounced > 0 || complained > 0 || failedQueue > 0;
+		return {
+			statuses: statusRows,
+			events: eventRows,
+			suppressed: Number(suppressions?.total || 0),
+			summary: {
+				accepted,
+				delivered,
+				bounced,
+				complained,
+				delayed,
+				openEvents,
+				clickEvents,
+				trackedSent,
+				activeQueue,
+				failedQueue,
+				health: hasRisk ? 'attention' : 'healthy'
+			}
+		};
 	}
 };
 export default reliabilityService;

@@ -21,7 +21,7 @@
 2. 记录 D1 Time Travel bookmark。
 3. 部署 Worker 后以管理员身份登录，调用一次 `POST /api/admin/migrate`。
 4. 确认 Cron 包含 `*/5 * * * *` 和 `0 16 * * *`。
-5. 保留 `resend_webhook_secret` Worker Secret，并在 Resend 订阅 sent/delivered/opened/clicked/bounced/complained/delayed/failed/suppressed。
+5. 两个 Resend 账户分别配置 `resend_webhook_secret_polyurea` 与 `resend_webhook_secret_coating` Worker Secret，并订阅 sent/delivered/opened/clicked/bounced/complained/delayed/failed/suppressed。
 
 ## 已知边界
 
