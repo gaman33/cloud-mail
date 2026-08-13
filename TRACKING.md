@@ -8,15 +8,18 @@ This fork stores delivery, open, click, bounce, complaint, delay, and failure ev
 2. In Resend, create a webhook pointing to `https://YOUR_WORKER_DOMAIN/api/webhooks`.
 3. Subscribe to `email.sent`, `email.delivered`, `email.opened`, `email.clicked`, `email.bounced`, `email.complained`, `email.delivery_delayed`, `email.failed`, and `email.suppressed`.
 4. Enable Resend click tracking for the sending domain and verify its tracking subdomain. Cloud Mail supplies its own open pixel, but `email.clicked` requires Resend click tracking.
-5. Copy the webhook signing secret (`whsec_...`) into the Worker secret named `resend_webhook_secret`:
+5. Copy each webhook signing secret (`whsec_...`) into an encrypted Worker secret. For the two-account deployment:
 
    ```sh
-   wrangler secret put resend_webhook_secret
+   wrangler secret put resend_webhook_secret_polyurea
+   wrangler secret put resend_webhook_secret_coating
    ```
+
+   Both Resend accounts may point to the same endpoint URL. Each account must keep its own signing secret. The legacy `resend_webhook_secret` variable remains supported for single-account deployments and safe migrations.
 
 6. Set Cloud Mail's existing `customDomain` setting to the public Worker domain. This domain is used for the tracking pixel URL. It must serve this Worker over HTTPS.
 
-The webhook returns HTTP 503 until `resend_webhook_secret` is configured. Invalid signatures return HTTP 400. Resend event retries are deduplicated using `svix-id`.
+The webhook returns HTTP 503 until at least one supported signing secret is configured. Invalid signatures return HTTP 400. Resend event retries are deduplicated using `svix-id`.
 
 ## Privacy and accuracy
 

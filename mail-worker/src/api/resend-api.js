@@ -1,10 +1,11 @@
 import { Resend } from 'resend';
 import resendService from '../service/resend-service';
 import app from '../hono/hono';
+import { configuredWebhookSecrets, verifyWebhookWithSecrets } from '../utils/resend-webhook-utils';
 
 app.post('/webhooks', async c => {
-	const webhookSecret = c.env.resend_webhook_secret;
-	if (!webhookSecret) return c.text('Webhook secret is not configured', 503);
+	const webhookSecrets = configuredWebhookSecrets(c.env);
+	if (!webhookSecrets.length) return c.text('Webhook secret is not configured', 503);
 
 	const payload = await c.req.text();
 	const providerEventId = c.req.header('svix-id');
@@ -14,11 +15,11 @@ app.post('/webhooks', async c => {
 
 	try {
 		const resend = new Resend('re_webhook_verification_only');
-		const body = resend.webhooks.verify({
-			payload,
-			headers: { id: providerEventId, timestamp, signature },
-			webhookSecret
-		});
+		const body = verifyWebhookWithSecrets(resend, payload, {
+			id: providerEventId,
+			timestamp,
+			signature
+		}, webhookSecrets);
 		await resendService.webhooks(c, body, providerEventId);
 		return c.text('success', 200);
 	} catch (error) {
