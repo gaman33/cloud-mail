@@ -168,9 +168,6 @@ const en = {
     turnstileSetting: 'Turnstile',
     signUpVerification: 'Sign Up Verification',
     addEmailVerification: 'Add Email Verification',
-    about: 'About',
-    version: 'Version',
-    community: 'Community',
     changeTitle: 'Change Title',
     addResendTokenDesc: 'Input to add; leave empty to delete',
     addOsDomain: 'Add Domain',
@@ -257,8 +254,6 @@ const en = {
     sendBanned: 'Banned',
     sendInternal: 'Only internal',
     wrote: 'wrote',
-    support: 'Support',
-    supportDesc: 'Buy me tea',
     featDesc: 'Feature Description',
     emailInterception: 'Email Interception',
     emailInterceptionDesc: 'Enter a domain or email address to prevent users from receiving emails from certain websites (Enter * to block all)',
@@ -290,8 +285,6 @@ const en = {
     noRecipientTitle: 'No Recipient',
     noRecipientDesc: 'Emails can be received even without a registered email address',
     preview: 'Preview',
-    help: 'Help',
-    document: 'Document',
     clearEmail: 'Email Cleanup',
     sendEmailAddress: 'From Email',
     toEmail: 'To Email',
@@ -347,6 +340,14 @@ const en = {
     noTrackingEvents: 'No tracking events yet',
     trackingNotAvailable: 'Tracking is not available for this message',
     trackingPrivacyNote: 'IP and location may belong to a mail privacy proxy or image cache and do not prove that the recipient personally read the message.'
+    ,trackingOpened: 'Opened'
+    ,firstOpenedAt: 'First opened'
+    ,lastOpenedAt: 'Last opened'
+    ,trackingLocation: 'Latest likely location'
+    ,showTrackingEvents: 'View activity ({count})'
+    ,hideTrackingEvents: 'Hide activity'
+    ,showAllTrackingEvents: 'Show all {count} events'
+    ,showRecentTrackingEvents: 'Show latest 5 only'
     ,trackingDelivered: 'Delivered'
     ,trackingOpenedAt: 'Opened · {time}'
     ,trackingLikelyLocation: 'Likely location · {location}'

@@ -168,9 +168,6 @@ const zh = {
     turnstileSetting: 'Turnstile 人机验证',
     signUpVerification: '注册验证',
     addEmailVerification: '添加验证',
-    about: '关于',
-    version: '版本',
-    community: '交流',
     changeTitle: '修改标题',
     addResendTokenDesc: '输入内容添加，不填则删除',
     addOsDomain: '添加域名',
@@ -257,8 +254,6 @@ const zh = {
     sendBanned: '已禁用',
     sendInternal: '仅站内',
     wrote: '来信',
-    support: '捐助',
-    supportDesc: '请我喝杯奶茶',
     featDesc: '功能说明',
     emailInterception: '邮件拦截',
     emailInterceptionDesc: '输入邮箱或域名拦截邮件，可用于禁止用户接收某些网站的邮件，输入*拦截所有',
@@ -290,8 +285,6 @@ const zh = {
     noRecipientTitle: '无人收件',
     noRecipientDesc: '即使没有注册的邮箱也能收到邮件',
     preview: '预览',
-    help: '帮助',
-    document: '项目文档',
     clearEmail: '邮件清除',
     sendEmailAddress: '发件人邮箱',
     toEmail: '收件人邮箱',
@@ -347,6 +340,14 @@ const zh = {
     ,noTrackingEvents: '暂时没有追踪事件'
     ,trackingNotAvailable: '这封邮件没有可用的追踪信息'
     ,trackingPrivacyNote: 'IP 和位置可能来自邮件隐私代理或图片缓存，不能据此断定收件人本人已经阅读。'
+    ,trackingOpened: '已打开'
+    ,firstOpenedAt: '首次打开'
+    ,lastOpenedAt: '最近打开'
+    ,trackingLocation: '最近推测位置'
+    ,showTrackingEvents: '查看活动记录（{count}）'
+    ,hideTrackingEvents: '收起活动记录'
+    ,showAllTrackingEvents: '显示全部 {count} 条记录'
+    ,showRecentTrackingEvents: '只显示最近 5 条'
     ,trackingDelivered: '已送达'
     ,trackingOpenedAt: '已打开 · {time}'
     ,trackingLikelyLocation: '推测位置 · {location}'
