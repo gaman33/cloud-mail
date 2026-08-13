@@ -347,6 +347,14 @@ const en = {
     noTrackingEvents: 'No tracking events yet',
     trackingNotAvailable: 'Tracking is not available for this message',
     trackingPrivacyNote: 'IP and location may belong to a mail privacy proxy or image cache and do not prove that the recipient personally read the message.'
+    ,trackingOpened: 'Opened'
+    ,firstOpenedAt: 'First opened'
+    ,lastOpenedAt: 'Last opened'
+    ,trackingLocation: 'Latest likely location'
+    ,showTrackingEvents: 'View activity ({count})'
+    ,hideTrackingEvents: 'Hide activity'
+    ,showAllTrackingEvents: 'Show all {count} events'
+    ,showRecentTrackingEvents: 'Show latest 5 only'
     ,trackingDelivered: 'Delivered'
     ,trackingOpenedAt: 'Opened · {time}'
     ,trackingLikelyLocation: 'Likely location · {location}'
