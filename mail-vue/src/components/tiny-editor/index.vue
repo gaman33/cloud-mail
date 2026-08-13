@@ -159,12 +159,12 @@ function initEditor() {
 
 function focus() {
   nextTick(() => {
-    editor.value.focus()
+    editor.value?.focus()
   })
 }
 
 function getContent() {
-  return editor.value.getContent()
+  return editor.value?.getContent() || ''
 }
 
 
@@ -179,7 +179,9 @@ function destroyEditor() {
 <style lang="scss" scoped>
 .editor-box {
   height: 100%;
+  min-height: 0;
   width: 100%;
+  overflow: hidden;
 }
 
 .loading {
@@ -209,6 +211,8 @@ function destroyEditor() {
 }
 
 :deep(.tox-tinymce) {
+  height: 100% !important;
+  min-height: 0;
   border: none;
   border-radius: 0;
 }
