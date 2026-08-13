@@ -134,6 +134,9 @@ const emailService = {
 			isStar: item.starId != null ? 1 : 0
 		}));
 
+		if (Number(type) === emailConst.type.SEND) {
+			await this.emailAddTrackingSummary(c, list);
+		}
 
 		await this.emailAddAtt(c, list);
 
@@ -146,6 +149,97 @@ const emailService = {
 		}
 
 		return { list, total: totalRow.total, latestEmail };
+	},
+
+	async emailAddTrackingSummary(c, list) {
+		if (!list?.length) return;
+		const emailIds = list.map(item => Number(item.emailId)).filter(Number.isFinite);
+		if (!emailIds.length) return;
+
+		const placeholders = emailIds.map(() => '?').join(',');
+		const {results = []} = await c.env.db.prepare(`
+			WITH selected_email AS (
+				SELECT email_id FROM email WHERE email_id IN (${placeholders})
+			), event_summary AS (
+				SELECT
+					ev.email_id,
+					SUM(CASE WHEN ev.event_type = 'opened' THEN 1 ELSE 0 END) AS open_count,
+					SUM(CASE WHEN ev.event_type = 'clicked' THEN 1 ELSE 0 END) AS click_count,
+					SUM(CASE WHEN ev.event_type = 'read_receipt' THEN 1 ELSE 0 END) AS read_receipt_count,
+					MAX(CASE WHEN ev.event_type = 'sent' THEN ev.event_time END) AS sent_time,
+					MAX(CASE WHEN ev.event_type = 'delivered' THEN ev.event_time END) AS delivered_time,
+					MAX(CASE WHEN ev.event_type = 'opened' THEN ev.event_time END) AS last_open_time,
+					MAX(CASE WHEN ev.event_type = 'clicked' THEN ev.event_time END) AS last_click_time,
+					MAX(CASE WHEN ev.event_type = 'read_receipt' THEN ev.event_time END) AS read_receipt_time
+				FROM email_event ev
+				INNER JOIN selected_email selected ON selected.email_id = ev.email_id
+				GROUP BY ev.email_id
+			), latest_open AS (
+				SELECT email_id, ip, country, region, city, source
+				FROM (
+					SELECT
+						ev.email_id, ev.ip, ev.country, ev.region, ev.city, ev.source,
+						ROW_NUMBER() OVER (
+							PARTITION BY ev.email_id
+							ORDER BY ev.event_time DESC, ev.event_id DESC
+						) AS row_number
+					FROM email_event ev
+					INNER JOIN selected_email selected ON selected.email_id = ev.email_id
+					WHERE ev.event_type = 'opened'
+				) ranked_open
+				WHERE row_number = 1
+			), tracked_email AS (
+				SELECT DISTINCT tracking.email_id
+				FROM email_tracking tracking
+				INNER JOIN selected_email selected ON selected.email_id = tracking.email_id
+			)
+			SELECT
+				selected.email_id,
+				CASE WHEN tracked.email_id IS NULL THEN 0 ELSE 1 END AS tracked,
+				COALESCE(summary.open_count, 0) AS open_count,
+				COALESCE(summary.click_count, 0) AS click_count,
+				COALESCE(summary.read_receipt_count, 0) AS read_receipt_count,
+				summary.sent_time,
+				summary.delivered_time,
+				summary.last_open_time,
+				summary.last_click_time,
+				summary.read_receipt_time,
+				latest.ip AS last_open_ip,
+				latest.country AS last_open_country,
+				latest.region AS last_open_region,
+				latest.city AS last_open_city,
+				latest.source AS last_open_source
+			FROM selected_email selected
+			LEFT JOIN event_summary summary ON summary.email_id = selected.email_id
+			LEFT JOIN latest_open latest ON latest.email_id = selected.email_id
+			LEFT JOIN tracked_email tracked ON tracked.email_id = selected.email_id
+		`).bind(...emailIds).all();
+
+		const summaries = new Map(results.map(row => [Number(row.email_id), {
+			tracked: Boolean(row.tracked),
+			openCount: Number(row.open_count || 0),
+			clickCount: Number(row.click_count || 0),
+			readReceiptCount: Number(row.read_receipt_count || 0),
+			sentTime: row.sent_time || null,
+			deliveredTime: row.delivered_time || null,
+			lastOpenTime: row.last_open_time || null,
+			lastClickTime: row.last_click_time || null,
+			readReceiptTime: row.read_receipt_time || null,
+			lastOpenIp: row.last_open_ip || '',
+			lastOpenCountry: row.last_open_country || '',
+			lastOpenRegion: row.last_open_region || '',
+			lastOpenCity: row.last_open_city || '',
+			lastOpenSource: row.last_open_source || ''
+		}]));
+
+		list.forEach(item => {
+			item.trackingSummary = summaries.get(Number(item.emailId)) || {
+				tracked: false,
+				openCount: 0,
+				clickCount: 0,
+				readReceiptCount: 0
+			};
+		});
 	},
 
 	async delete(c, params, userId) {

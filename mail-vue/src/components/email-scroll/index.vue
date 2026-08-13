@@ -88,6 +88,59 @@
                           {{ item.subject || '\u200B' }}
                         </slot>
                       </span>
+                      <span class="tracking-tags" v-if="props.type === 'send' && item.trackingSummary?.tracked">
+                        <el-tag
+                            v-if="item.trackingSummary.deliveredTime || item.status === 2"
+                            class="tracking-tag"
+                            size="small"
+                            type="success"
+                            effect="light"
+                            round
+                        >{{ t('trackingDelivered') }}</el-tag>
+                        <el-tooltip
+                            v-if="item.trackingSummary.openCount > 0"
+                            effect="dark"
+                            :content="trackingOpenTooltip(item.trackingSummary)"
+                        >
+                          <el-tag class="tracking-tag" size="small" type="primary" effect="light" round>
+                            {{ t('trackingOpenedAt', {time: trackingTime(item.trackingSummary.lastOpenTime)}) }}
+                          </el-tag>
+                        </el-tooltip>
+                        <el-tooltip
+                            v-if="trackingLocation(item.trackingSummary)"
+                            effect="dark"
+                            :content="trackingLocationTooltip(item.trackingSummary)"
+                        >
+                          <el-tag class="tracking-tag" size="small" type="info" effect="light" round>
+                            {{ t('trackingLikelyLocation', {location: trackingLocation(item.trackingSummary)}) }}
+                          </el-tag>
+                        </el-tooltip>
+                        <el-tag
+                            v-if="item.trackingSummary.clickCount > 0"
+                            class="tracking-tag"
+                            size="small"
+                            type="warning"
+                            effect="light"
+                            round
+                        >{{ t('trackingClickedAt', {time: trackingTime(item.trackingSummary.lastClickTime)}) }}</el-tag>
+                        <el-tag
+                            v-if="item.trackingSummary.readReceiptCount > 0"
+                            class="tracking-tag"
+                            size="small"
+                            type="success"
+                            effect="dark"
+                            round
+                        >{{ t('trackingReceiptAt', {time: trackingTime(item.trackingSummary.readReceiptTime)}) }}</el-tag>
+                        <el-tooltip
+                            v-if="item.trackingSummary.openCount === 0"
+                            effect="dark"
+                            :content="t('trackingNoOpenHint')"
+                        >
+                          <el-tag class="tracking-tag" size="small" type="info" effect="plain" round>
+                            {{ t('trackingNoOpen') }}
+                          </el-tag>
+                        </el-tooltip>
+                      </span>
                     </span>
                     <span class="email-content">{{ item.formatText || '\u200B' }}</span>
                   </div>
@@ -580,6 +633,33 @@ function cleanSpace(text) {
       .replace(/[\u200B-\u200F\uFEFF\u034F\u200B-\u200F\u00A0\u3000\u00AD]/g, '')// 移除零宽空格
       .replace(/\s+/g, ' ')                   // 多空白合并成一个空格
       .trim();
+}
+
+function trackingTime(value) {
+  return value ? fromNow(value) : '';
+}
+
+function trackingLocation(summary) {
+  if (!summary) return '';
+  return [...new Set([
+    summary.lastOpenCity,
+    summary.lastOpenRegion,
+    summary.lastOpenCountry
+  ].filter(Boolean))].join(' / ');
+}
+
+function trackingOpenTooltip(summary) {
+  return t('trackingOpenTooltip', {
+    count: summary?.openCount || 0,
+    ip: summary?.lastOpenIp || t('unknown')
+  });
+}
+
+function trackingLocationTooltip(summary) {
+  return t('trackingLocationTooltip', {
+    location: trackingLocation(summary),
+    ip: summary?.lastOpenIp || t('unknown')
+  });
 }
 
 function starChange(email) {
@@ -1197,6 +1277,28 @@ function loadData() {
         white-space: nowrap;
         text-overflow: ellipsis;
         min-width: 0;
+      }
+
+      .tracking-tags {
+        display: inline-flex;
+        flex: 0 1 auto;
+        align-items: center;
+        gap: 4px;
+        max-width: min(58vw, 760px);
+        overflow: hidden;
+        white-space: nowrap;
+
+        .tracking-tag {
+          flex: 0 0 auto;
+          height: 20px;
+          padding: 0 6px;
+          font-size: 11px;
+          line-height: 18px;
+        }
+
+        @media (max-width: 1366px) {
+          max-width: 62vw;
+        }
       }
 
       .email-content {
