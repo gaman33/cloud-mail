@@ -50,5 +50,5 @@ app.get('/tracking/export', async c => {
 		columns.map(([label]) => label).join(','),
 		...rows.map(row => columns.map(([, key]) => `"${String(row[key] ?? '').replace(/"/g, '""')}"`).join(','))
 	].join('\r\n');
-	return c.body(csv, 200, {'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': 'attachment; filename="cloud-mail-tracking.csv"'});
+	return c.body(csv, 200, {'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': 'attachment; filename="mail-tracking.csv"'});
 });

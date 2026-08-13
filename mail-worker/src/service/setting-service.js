@@ -10,11 +10,24 @@ import {t} from '../i18n/i18n'
 import verifyRecordService from './verify-record-service';
 import userContext from '../security/user-context';
 
+const NEUTRAL_COMPLIANCE_NOTICE = '请遵守当地法律法规，违规使用责任由使用者自行承担';
+
+function sanitizePublicBranding(settings) {
+	if (!settings || typeof settings !== 'object') return settings;
+	if (settings.title === 'Cloud Mail') settings.title = 'Mail';
+	if (settings.noticeTitle === 'Cloud Mail') settings.noticeTitle = 'Mail';
+	if (typeof settings.noticeContent === 'string') {
+		settings.noticeContent = settings.noticeContent.replace(/请遵守当地法规，.{2}不承担任何法律责任/, NEUTRAL_COMPLIANCE_NOTICE);
+	}
+	return settings;
+}
+
 const settingService = {
 
 	async refresh(c) {
 		const settingRow = await orm(c).select().from(setting).get();
 		settingRow.resendTokens = JSON.parse(settingRow.resendTokens);
+		sanitizePublicBranding(settingRow);
 		c.set('setting', settingRow);
 		await c.env.kv.put(KvConst.SETTING, JSON.stringify(settingRow));
 	},
@@ -22,7 +35,7 @@ const settingService = {
 	async query(c) {
 
 		if (c.get?.('setting')) {
-			return c.get('setting')
+			return sanitizePublicBranding(c.get('setting'))
 		}
 
 		const setting = await c.env.kv.get(KvConst.SETTING, { type: 'json' });
@@ -30,6 +43,8 @@ const settingService = {
 		if (!setting) {
 			throw new BizError('数据库未初始化 Database not initialized.');
 		}
+
+		sanitizePublicBranding(setting);
 
 		let domainList = c.env.domain;
 
@@ -50,7 +65,6 @@ const settingService = {
 
 
 		let linuxdoSwitch = c.env.linuxdo_switch;
-		let projectLink = c.env.project_link;
 
 		if (typeof linuxdoSwitch === 'string' && linuxdoSwitch === 'true') {
 			linuxdoSwitch = true
@@ -59,16 +73,6 @@ const settingService = {
 		} else {
 			linuxdoSwitch = false
 		}
-
-		if (typeof projectLink === 'string' && projectLink === 'false') {
-			projectLink = false
-		} else if (projectLink === false) {
-			projectLink = false
-		} else {
-			projectLink = true
-		}
-
-		setting.projectLink = projectLink;
 
 		setting.linuxdoClientId = c.env.linuxdo_client_id;
 		setting.linuxdoCallbackUrl = c.env.linuxdo_callback_url;
@@ -231,8 +235,7 @@ const settingService = {
 			linuxdoClientId: settingRow.linuxdoClientId,
 			linuxdoCallbackUrl: settingRow.linuxdoCallbackUrl,
 			linuxdoSwitch: settingRow.linuxdoSwitch,
-			minEmailPrefix: settingRow.minEmailPrefix,
-			projectLink: settingRow.projectLink
+			minEmailPrefix: settingRow.minEmailPrefix
 		};
 	},
 
