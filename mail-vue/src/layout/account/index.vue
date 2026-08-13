@@ -25,6 +25,8 @@
                 <template #dropdown>
                   <el-dropdown-menu>
                     <el-dropdown-item v-if="hasPerm('email:send')" @click="openSetName(item)">{{ $t('rename') }}</el-dropdown-item>
+                    <el-dropdown-item v-if="hasPerm('email:send')" @click="openSignature(item)">{{ $t('emailSignature') }}</el-dropdown-item>
+                    <el-dropdown-item v-if="hasPerm('email:send')" @click="openSendPreferences(item)">{{ $t('sendPreferences') }}</el-dropdown-item>
                     <el-dropdown-item v-if="item.accountId !== userStore.user.account.accountId" @click="setAsTop(item, index)">{{ $t('pin') }}</el-dropdown-item>
                     <el-dropdown-item v-if="item.accountId !== userStore.user.account.accountId && hasPerm('account:delete')"
                                       @click="remove(item)">{{ $t('delete') }}
@@ -123,6 +125,30 @@
         </el-button>
       </div>
     </el-dialog>
+    <el-dialog v-model="signatureShow" :title="$t('emailSignature')" class="signature-dialog">
+      <div class="signature-options">
+        <el-switch v-model="signatureForm.signatureEnabled" :active-text="$t('enableSignature')" />
+        <el-switch v-model="signatureForm.signatureOnReply" :active-text="$t('signatureOnReply')" />
+      </div>
+      <div class="signature-editor">
+        <tinyEditor :def-value="signatureForm.signatureHtml" editor-id="account-signature-editor" @change="signatureChange" />
+      </div>
+      <template #footer>
+        <el-button @click="signatureShow = false">{{ $t('cancel') }}</el-button>
+        <el-button type="primary" :loading="signatureLoading" @click="saveSignature">{{ $t('save') }}</el-button>
+      </template>
+    </el-dialog>
+    <el-dialog v-model="sendPreferencesShow" :title="$t('sendPreferences')">
+      <el-form label-position="top">
+        <el-form-item :label="$t('defaultPriority')">
+          <el-select v-model="sendPreferencesForm.defaultPriority"><el-option value="high" :label="$t('high')"/><el-option value="normal" :label="$t('normal')"/><el-option value="low" :label="$t('low')"/></el-select>
+        </el-form-item>
+        <el-form-item><el-switch v-model="sendPreferencesForm.defaultTracking" :active-text="$t('defaultTracking')"/></el-form-item>
+        <el-form-item><el-switch v-model="sendPreferencesForm.defaultReadReceipt" :active-text="$t('defaultReadReceipt')"/></el-form-item>
+        <el-form-item><el-switch v-model="sendPreferencesForm.defaultUnsubscribe" :active-text="$t('defaultUnsubscribe')"/></el-form-item>
+      </el-form>
+      <template #footer><el-button @click="sendPreferencesShow=false">{{ $t('cancel') }}</el-button><el-button type="primary" @click="saveSendPreferences">{{ $t('save') }}</el-button></template>
+    </el-dialog>
   </div>
 </template>
 <script setup>
@@ -134,7 +160,9 @@ import {
   accountDelete,
   accountSetName,
   accountSetAllReceive,
-  accountSetAsTop
+  accountSetAsTop,
+  accountSetSignature,
+  accountSetSendPreferences
 } from "@/request/account.js";
 import {sleep} from "@/utils/time-utils.js"
 import {isEmail} from "@/utils/verify-utils.js";
@@ -145,6 +173,7 @@ import {useUserStore} from "@/store/user.js";
 import {hasPerm} from "@/perm/perm.js"
 import {useI18n} from "vue-i18n";
 import {AccountAllReceiveEnum} from "@/enums/account-enum.js";
+import tinyEditor from '@/components/tiny-editor/index.vue'
 
 const {t} = useI18n();
 const userStore = useUserStore();
@@ -162,6 +191,17 @@ const verifyShow = ref(false)
 const setNameShow = ref(false)
 const setNameLoading = ref(false)
 const accountName = ref(null)
+const signatureShow = ref(false)
+const signatureLoading = ref(false)
+const signatureForm = reactive({
+  accountId: 0,
+  signatureHtml: '',
+  signatureText: '',
+  signatureEnabled: false,
+  signatureOnReply: true
+})
+const sendPreferencesShow = ref(false)
+const sendPreferencesForm = reactive({accountId: 0, defaultPriority: 'normal', defaultTracking: true, defaultReadReceipt: false, defaultUnsubscribe: false})
 const addRef = ref({})
 const scrollbarRef = ref({})
 let account = null
@@ -268,6 +308,50 @@ function openSetName(accountItem) {
   accountName.value = accountItem.name
   account = accountItem
   setNameShow.value = true
+}
+
+function openSignature(accountItem) {
+  account = accountItem
+  Object.assign(signatureForm, {
+    accountId: accountItem.accountId,
+    signatureHtml: accountItem.signatureHtml || '',
+    signatureText: accountItem.signatureText || '',
+    signatureEnabled: !!accountItem.signatureEnabled,
+    signatureOnReply: accountItem.signatureOnReply !== 0
+  })
+  signatureShow.value = true
+}
+
+function signatureChange(html, text) {
+  signatureForm.signatureHtml = html
+  signatureForm.signatureText = text
+}
+
+function openSendPreferences(accountItem) {
+  account = accountItem
+  Object.assign(sendPreferencesForm, {accountId: accountItem.accountId, defaultPriority: accountItem.defaultPriority || 'normal', defaultTracking: accountItem.defaultTracking !== 0, defaultReadReceipt: !!accountItem.defaultReadReceipt, defaultUnsubscribe: !!accountItem.defaultUnsubscribe})
+  sendPreferencesShow.value = true
+}
+
+async function saveSendPreferences() {
+  const saved = await accountSetSendPreferences(sendPreferencesForm)
+  Object.assign(account, saved)
+  if (accountStore.currentAccount?.accountId === account.accountId) Object.assign(accountStore.currentAccount, saved)
+  sendPreferencesShow.value = false
+  ElMessage({message: t('saveSuccessMsg'), type: 'success', plain: true})
+}
+
+async function saveSignature() {
+  signatureLoading.value = true
+  try {
+    const saved = await accountSetSignature(signatureForm)
+    Object.assign(account, saved)
+    if (accountStore.currentAccount?.accountId === account.accountId) Object.assign(accountStore.currentAccount, saved)
+    signatureShow.value = false
+    ElMessage({message: t('saveSuccessMsg'), type: 'success', plain: true})
+  } finally {
+    signatureLoading.value = false
+  }
 }
 
 function setAllReceive(account) {
@@ -653,6 +737,21 @@ path[fill="#ffdda1"] {
   width: 100px;
   opacity: 0;
   pointer-events: none;
+}
+
+:deep(.signature-dialog) {
+  width: min(760px, calc(100% - 40px)) !important;
+}
+
+.signature-options {
+  display: flex;
+  gap: 24px;
+  margin-bottom: 12px;
+}
+
+.signature-editor {
+  height: 320px;
+  border: 1px solid var(--el-border-color);
 }
 
 :deep(.el-pagination .el-select) {

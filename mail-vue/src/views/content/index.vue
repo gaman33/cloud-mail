@@ -34,6 +34,29 @@
             <el-alert v-if="email.status === 4" :closable="false" :title="$t('complained')" class="email-msg" type="warning" show-icon />
             <el-alert v-if="email.status === 5" :closable="false" :title="$t('delayed')" class="email-msg" type="warning" show-icon />
           </div>
+          <div class="tracking" v-if="email.type === 1">
+            <div class="tracking-title">{{ $t('tracking') }}</div>
+            <div v-if="trackingLoading" class="tracking-empty">{{ $t('loading') }}</div>
+            <template v-else-if="trackingData.tracked">
+              <div class="tracking-summary">
+                <div class="tracking-card"><span>{{ $t('openCount') }}</span><strong>{{ trackingData.openCount }}</strong></div>
+                <div class="tracking-card"><span>{{ $t('clickCount') }}</span><strong>{{ trackingData.clickCount }}</strong></div>
+                <div class="tracking-card tracking-recipient"><span>{{ $t('recipient') }}</span><strong>{{ trackingData.recipientEmail || '-' }}</strong></div>
+              </div>
+              <el-timeline v-if="trackingData.events.length" class="tracking-timeline">
+                <el-timeline-item v-for="event in [...trackingData.events].reverse()" :key="event.eventId" :timestamp="formatDetailDate(event.eventTime)" placement="top">
+                  <div class="event-title">{{ trackingEventLabel(event.eventType) }}</div>
+                  <div class="event-meta" v-if="event.ip">IP: {{ event.ip }}</div>
+                  <div class="event-meta" v-if="event.country || event.region || event.city">{{ [event.country, event.region, event.city].filter(Boolean).join(' / ') }}</div>
+                  <div class="event-meta" v-if="event.browser || event.os || event.device">{{ [event.browser, event.os, event.device].filter(Boolean).join(' · ') }}</div>
+                  <div class="event-meta event-url" v-if="event.url">{{ event.url }}</div>
+                </el-timeline-item>
+              </el-timeline>
+              <div v-else class="tracking-empty">{{ $t('noTrackingEvents') }}</div>
+              <el-alert class="privacy-note" type="info" :closable="false" :title="$t('trackingPrivacyNote')" show-icon />
+            </template>
+            <div v-else class="tracking-empty">{{ $t('trackingNotAvailable') }}</div>
+          </div>
           <el-scrollbar class="htm-scrollbar" :class="email.attList.length === 0 ? 'bottom-distance' : ''">
             <ShadowHtml class="shadow-html" :html="formatImage(email.content)" v-if="email.content" />
             <pre v-else class="email-text" >{{email.text}}</pre>
@@ -78,7 +101,7 @@ import ShadowHtml from '@/components/shadow-html/index.vue'
 import {reactive, ref, watch, onMounted, onUnmounted} from "vue";
 import {useRouter} from 'vue-router'
 import {ElMessage, ElMessageBox} from 'element-plus'
-import {emailDelete, emailRead} from "@/request/email.js";
+import {emailDelete, emailRead, emailTracking} from "@/request/email.js";
 import {Icon} from "@iconify/vue";
 import {useEmailStore} from "@/store/email.js";
 import {useAccountStore} from "@/store/account.js";
@@ -101,6 +124,8 @@ const router = useRouter()
 const email = emailStore.contentData.email
 const showPreview = ref(false)
 const srcList = reactive([])
+const trackingLoading = ref(false)
+const trackingData = reactive({tracked: false, recipientEmail: '', openCount: 0, clickCount: 0, events: []})
 
 const { t } = useI18n()
 watch(() => accountStore.currentAccountId, () => {
@@ -112,6 +137,7 @@ onMounted(() => {
     email.unread = EmailUnreadEnum.READ;
     emailRead([email.emailId]);
   }
+  if (email.type === 1) loadTracking();
 })
 
 onUnmounted(() => {
@@ -151,6 +177,15 @@ function isImage(filename) {
 function formateReceive(recipient) {
   recipient = JSON.parse(recipient)
   return recipient.map(item => item.address).join(', ')
+}
+
+function loadTracking() {
+  trackingLoading.value = true
+  emailTracking(email.emailId).then(data => Object.assign(trackingData, data)).finally(() => trackingLoading.value = false)
+}
+
+function trackingEventLabel(type) {
+  return ({sent: t('sent'), delivered: t('delivered'), opened: t('opened'), clicked: t('clicked'), read_receipt: t('read_receipt'), bounced: t('bounced'), complained: t('complained'), delivery_delayed: t('delayed'), failed: t('sendFailMsg'), suppressed: t('suppressed')})[type] || type
 }
 
 function changeStar() {
@@ -266,6 +301,24 @@ const handleDelete = () => {
   .content {
     display: flex;
     flex-direction: column;
+
+    .tracking {
+      border: 1px solid var(--light-border-color);
+      border-radius: 6px;
+      padding: 14px;
+      margin-bottom: 20px;
+      max-width: 760px;
+      .tracking-title { font-weight: bold; margin-bottom: 12px; }
+      .tracking-summary { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+      .tracking-card { background: var(--light-ill); padding: 9px 12px; border-radius: 5px; min-width: 90px; display: flex; flex-direction: column; gap: 4px; }
+      .tracking-recipient { min-width: min(330px, 100%); }
+      .tracking-timeline { padding-left: 4px; margin-top: 10px; }
+      .event-title { font-weight: 600; }
+      .event-meta { color: var(--secondary-text-color); margin-top: 3px; word-break: break-word; }
+      .event-url { max-width: 650px; }
+      .tracking-empty { color: var(--secondary-text-color); margin-bottom: 8px; }
+      .privacy-note { margin-top: 8px; }
+    }
 
     .att {
       margin-top: 30px;

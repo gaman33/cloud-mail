@@ -44,6 +44,25 @@
           </template>
         </el-input-tag>
         <el-input v-model="form.subject" :placeholder="t('subject')" />
+        <div class="send-options">
+          <span>{{ $t('priority') }}</span>
+          <el-radio-group v-model="form.priority" size="small">
+            <el-radio-button value="high">{{ $t('high') }}</el-radio-button>
+            <el-radio-button value="normal">{{ $t('normal') }}</el-radio-button>
+            <el-radio-button value="low">{{ $t('low') }}</el-radio-button>
+          </el-radio-group>
+          <el-checkbox v-model="form.trackingEnabled">{{ $t('emailTracking') }}</el-checkbox>
+          <el-checkbox v-model="form.readReceiptRequested">{{ $t('requestReadReceipt') }}</el-checkbox>
+          <el-checkbox v-model="form.unsubscribeEnabled">{{ $t('includeUnsubscribe') }}</el-checkbox>
+          <el-dropdown @command="applyLibraryItem">
+            <el-button size="small">{{ $t('templatesAndSnippets') }}</el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item v-for="item in libraryItems" :key="item.templateId" :command="item">{{ item.type === 'snippet' ? '✂ ' : '▣ ' }}{{ item.name }}</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+        </div>
         <tinyEditor :def-value="defValue" ref="editor" @change="change" @focus="focusChange" />
         <div class="button-item">
           <div class="att-add" @click="chooseFile">
@@ -97,11 +116,11 @@ import tinyEditor from '@/components/tiny-editor/index.vue'
 import {h, nextTick, onMounted, onUnmounted, reactive, ref, toRaw, computed} from "vue";
 import {Icon} from "@iconify/vue";
 import {useUserStore} from "@/store/user.js";
-import {emailSend} from "@/request/email.js";
+import {emailSend, attachmentUpload, attachmentCancel} from "@/request/email.js";
 import {isEmail} from "@/utils/verify-utils.js";
 import {useAccountStore} from "@/store/account.js";
 import {useEmailStore} from "@/store/email.js";
-import {fileToBase64, formatBytes} from "@/utils/file-utils.js";
+import {formatBytes} from "@/utils/file-utils.js";
 import {getIconByName} from "@/utils/icon-utils.js";
 import sendPercent from "@/components/send-percent/index.vue"
 import {toOssDomain} from "@/utils/convert.js";
@@ -114,6 +133,7 @@ import dayjs from "dayjs";
 import {useI18n} from "vue-i18n";
 import router from "@/router/index.js";
 import {ElMessageBox} from "element-plus";
+import {templateList} from '@/request/reliability.js'
 
 defineExpose({
   open,
@@ -156,10 +176,30 @@ const form = reactive({
   text: '',
   emailId: 0,
   attachments: [],
+  readReceiptRequested: false,
+  trackingEnabled: true,
+  unsubscribeEnabled: false,
+  priority: 'normal',
+  idempotencyKey: '',
   draftId: null,
 })
 
 const selectRecipientList = ref([])
+const libraryItems = ref([])
+
+templateList().then(items => libraryItems.value = items).catch(() => {})
+
+function applyLibraryItem(item) {
+  if (item.type === 'snippet') {
+    form.content = `${editor.value.getContent() || ''}${item.content || ''}`
+    defValue.value = form.content
+    return
+  }
+  form.subject = item.subject || form.subject
+  form.content = item.content || ''
+  form.text = item.text || ''
+  defValue.value = form.content
+}
 
 const contacts = computed(() => writerStore.sendRecipientRecord.map(item => ({email: item})))
 
@@ -262,7 +302,8 @@ function clearContent() {
 }
 
 function delAtt(index) {
-  form.attachments.splice(index, 1);
+  const [item] = form.attachments.splice(index, 1);
+  if (item?.uploadToken) attachmentCancel(item.uploadToken).catch(() => {});
 }
 
 function chooseFile() {
@@ -276,12 +317,23 @@ function chooseFile() {
 
     for (const file of fileList) {
 
-      const size = file.size
-      const filename = file.name
-      const contentType = file.type
-
-      const content = await fileToBase64(file)
-      form.attachments.push({content, filename, size, contentType})
+      if (file.size > 20 * 1024 * 1024) {
+        ElMessage({message: t('attachmentTooLarge'), type: 'error', plain: true})
+        continue
+      }
+      const total = form.attachments.reduce((sum, item) => sum + Number(item.size || 0), 0) + file.size
+      if (total > 25 * 1024 * 1024) {
+        ElMessage({message: t('attachmentTotalTooLarge'), type: 'error', plain: true})
+        break
+      }
+      const pending = reactive({filename: file.name, size: file.size, contentType: file.type, uploading: true})
+      form.attachments.push(pending)
+      try {
+        Object.assign(pending, await attachmentUpload(file), {uploading: false})
+      } catch (e) {
+        form.attachments.splice(form.attachments.indexOf(pending), 1)
+        ElMessage({message: t('attachmentUploadFailed'), type: 'error', plain: true})
+      }
 
     }
 
@@ -289,6 +341,13 @@ function chooseFile() {
 }
 
 async function sendEmail() {
+
+  form.idempotencyKey = form.idempotencyKey || crypto.randomUUID()
+
+  if (form.attachments.some(item => item.uploading)) {
+    ElMessage({message: t('attachmentUploading'), type: 'warning', plain: true})
+    return
+  }
 
   if (form.receiveEmail.length === 0) {
     ElMessage({
@@ -414,6 +473,11 @@ function resetForm() {
   form.content = ''
   form.manyType = null
   form.attachments = []
+  form.readReceiptRequested = false
+  form.trackingEnabled = true
+  form.unsubscribeEnabled = false
+  form.priority = 'normal'
+  form.idempotencyKey = ''
   form.sendType = ''
   form.emailId = 0
   form.draftId = null
@@ -507,6 +571,7 @@ function formatImage(content) {
 }
 
 function open() {
+	const selectedAccount = accountStore.currentAccount.email ? accountStore.currentAccount : userStore.user.account
   if (!accountStore.currentAccount.email) {
     form.sendEmail = userStore.user.email;
     form.accountId = userStore.user.account.accountId;
@@ -516,6 +581,10 @@ function open() {
     form.accountId = accountStore.currentAccount.accountId;
     form.name = accountStore.currentAccount.name;
   }
+  form.priority = selectedAccount.defaultPriority || 'normal'
+  form.trackingEnabled = selectedAccount.defaultTracking !== 0
+  form.readReceiptRequested = !!selectedAccount.defaultReadReceipt
+  form.unsubscribeEnabled = !!selectedAccount.defaultUnsubscribe
   show.value = true;
   editor.value.focus()
 }
@@ -763,6 +832,14 @@ function close() {
   display: flex;
   justify-content: end;
   margin-top: 10px;
+}
+
+.send-options {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 8px 0;
 }
 
 .add-contact {

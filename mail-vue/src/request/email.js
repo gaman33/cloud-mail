@@ -16,6 +16,10 @@ export function emailRead(emailIds) {
     return http.put('/email/read', {emailIds})
 }
 
+export function emailTracking(emailId) {
+    return http.get(`/email/tracking/${emailId}`, {noMsg: true})
+}
+
 export function emailSend(form,progress) {
     return http.post('/email/send', form,{
         onUploadProgress: (e) => {
@@ -23,4 +27,14 @@ export function emailSend(form,progress) {
         },
         noMsg: true
     })
+}
+
+export function attachmentUpload(file, progress) {
+    const data = new FormData()
+    data.append('file', file)
+    return http.post('/attachment/upload', data, {noMsg: true, onUploadProgress: progress})
+}
+
+export function attachmentCancel(token) {
+    return http.delete(`/attachment/upload/${token}`, {noMsg: true})
 }

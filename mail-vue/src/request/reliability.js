@@ -1,0 +1,16 @@
+import http from '@/axios/index.js'
+
+export const reliabilityDashboard = () => http.get('/reliability/dashboard')
+export const suppressionList = () => http.get('/reliability/suppressions')
+export const suppressionRemove = email => http.delete('/reliability/suppressions', {params: {email}})
+export const auditList = () => http.get('/reliability/audit')
+export const sendJobList = () => http.get('/reliability/send-jobs')
+export const sendJobRetry = id => http.post(`/reliability/send-jobs/${id}/retry`)
+export const contactList = () => http.get('/contacts')
+export const contactUpdate = (id, data) => http.put(`/contacts/${id}`, data)
+export const contactTimeline = id => http.get(`/contacts/${id}/timeline`)
+export const deliverabilityCheck = domain => http.get(`/reliability/deliverability/${encodeURIComponent(domain)}`)
+export const templateList = type => http.get('/templates', {params: {type}})
+export const templateSave = data => http.post('/templates', data)
+export const templateDelete = id => http.delete(`/templates/${id}`)
+export const migrateDatabase = () => http.post('/admin/migrate')

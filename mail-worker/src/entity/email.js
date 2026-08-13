@@ -23,6 +23,11 @@ export const email = sqliteTable('email', {
 	resendEmailId: text('resend_email_id'),
 	message: text('message'),
 	unread: integer('unread').default(0).notNull(),
+	readReceiptRequested: integer('read_receipt_requested').default(0).notNull(),
+	trackingEnabled: integer('tracking_enabled').default(1).notNull(),
+	priority: text('priority').default('normal').notNull(),
+	idempotencyKey: text('idempotency_key'),
+	unsubscribeEnabled: integer('unsubscribe_enabled').default(0).notNull(),
 	createTime: text('create_time').default(sql`CURRENT_TIMESTAMP`).notNull(),
 	isDel: integer('is_del').default(0).notNull()
 });

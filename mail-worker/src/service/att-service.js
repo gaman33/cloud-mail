@@ -9,8 +9,73 @@ import { parseHTML } from 'linkedom';
 import { v4 as uuidv4 } from 'uuid';
 import domainUtils from '../utils/domain-uitls';
 import settingService from "./setting-service";
+import attachmentUpload from '../entity/attachment-upload';
+import BizError from '../error/biz-error';
+
+const MAX_ATTACHMENT_SIZE = 20 * 1024 * 1024;
+const MAX_TOTAL_ATTACHMENT_SIZE = 25 * 1024 * 1024;
 
 const attService = {
+	async upload(c, file, userId) {
+		if (!file || typeof file.arrayBuffer !== 'function') throw new BizError('Attachment file is required');
+		if (!file.size || file.size > MAX_ATTACHMENT_SIZE) throw new BizError('Attachment exceeds the 20 MB limit');
+		const token = crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '');
+		const filename = String(file.name || 'attachment').slice(0, 255);
+		const mimeType = String(file.type || 'application/octet-stream').slice(0, 255);
+		const key = `${constant.ATTACHMENT_PREFIX}uploads/${userId}/${token}${fileUtils.getExtFileName(filename)}`;
+		const content = await file.arrayBuffer();
+		await r2Service.putObj(c, key, content, {
+			contentType: mimeType,
+			contentDisposition: `attachment;filename=${encodeURIComponent(filename)}`
+		});
+		try {
+			await orm(c).insert(attachmentUpload).values({userId, token, key, filename, mimeType, size: file.size}).run();
+		} catch (error) {
+			await r2Service.delete(c, key);
+			throw error;
+		}
+		return {uploadToken: token, filename, size: file.size, contentType: mimeType};
+	},
+
+	async cancelUpload(c, token, userId) {
+		const row = await orm(c).select().from(attachmentUpload).where(and(
+			eq(attachmentUpload.token, token), eq(attachmentUpload.userId, userId), eq(attachmentUpload.consumed, 0)
+		)).get();
+		if (!row) return;
+		await r2Service.delete(c, row.key);
+		await orm(c).delete(attachmentUpload).where(eq(attachmentUpload.uploadId, row.uploadId)).run();
+	},
+
+	async resolveSendAttachments(c, attachments, userId, allowConsumed = false) {
+		if (!Array.isArray(attachments) || attachments.length === 0) return [];
+		if (attachments.length > 10) throw new BizError('A maximum of 10 attachments is allowed');
+		let total = 0;
+		const resolved = [];
+		for (const item of attachments) {
+			if (!item.uploadToken) {
+				const content = String(item.content || '').replace(/^data:[^,]*,/, '').replace(/\s+/g, '');
+				const estimatedSize = content ? Math.floor(content.length * 3 / 4) : Number(item.size || 0);
+				if (estimatedSize > MAX_ATTACHMENT_SIZE) throw new BizError('Attachment exceeds the 20 MB limit');
+				total += estimatedSize;
+				resolved.push(item);
+				continue;
+			}
+			const filters = [eq(attachmentUpload.token, item.uploadToken), eq(attachmentUpload.userId, userId)];
+			if (!allowConsumed) filters.push(eq(attachmentUpload.consumed, 0));
+			const row = await orm(c).select().from(attachmentUpload).where(and(...filters)).get();
+			if (!row) throw new BizError('Attachment upload is invalid or has already been used');
+			const obj = await r2Service.getObj(c, row.key);
+			if (!obj) throw new BizError('Attachment data is no longer available');
+			const content = obj instanceof ArrayBuffer ? obj : await obj.arrayBuffer();
+			total += row.size;
+			resolved.push({
+				uploadToken: row.token, filename: row.filename, size: row.size,
+				contentType: row.mimeType, mimeType: row.mimeType, type: row.mimeType, content
+			});
+		}
+		if (total > MAX_TOTAL_ATTACHMENT_SIZE) throw new BizError('Attachments exceed the 25 MB total limit');
+		return resolved;
+	},
 
 	async addAtt(c, attachments) {
 
@@ -146,18 +211,29 @@ const attService = {
 		return { imageDataList, html: document.toString() };
 	},
 
-	async saveSendAtt(c, attList, userId, accountId, emailId) {
+	async saveSendAtt(c, attList, userId, accountId, emailId, consumeUploads = true) {
 
 		const attDataList = [];
 
 		for (let att of attList) {
+			if (att.uploadToken) {
+				const upload = await orm(c).select().from(attachmentUpload).where(and(
+					eq(attachmentUpload.token, att.uploadToken), eq(attachmentUpload.userId, userId)
+				)).get();
+				if (!upload) throw new BizError('Attachment upload is invalid or has already been used');
+				att.key = upload.key;
+				const attData = {userId, accountId, emailId, key: upload.key, size: upload.size,
+					filename: upload.filename, mimeType: upload.mimeType, type: attConst.type.ATT};
+				attDataList.push(attData);
+				continue;
+			}
 			att.buff = fileUtils.base64ToUint8Array(att.content);
 			att.key = constant.ATTACHMENT_PREFIX + await fileUtils.getBuffHash(att.buff) + fileUtils.getExtFileName(att.filename);
 			const attData = { userId, accountId, emailId };
 			attData.key = att.key;
 			attData.size = att.buff.length;
 			attData.filename = att.filename;
-			attData.mimeType = att.type;
+			attData.mimeType = att.mimeType || att.contentType || att.type || 'application/octet-stream';
 			attData.type = attConst.type.ATT;
 			attDataList.push(attData);
 		}
@@ -165,12 +241,27 @@ const attService = {
 		await orm(c).insert(att).values(attDataList).run();
 
 		for (let att of attList) {
+			if (att.uploadToken && consumeUploads) {
+				await orm(c).update(attachmentUpload).set({consumed: 1}).where(and(
+					eq(attachmentUpload.token, att.uploadToken), eq(attachmentUpload.userId, userId)
+				)).run();
+				continue;
+			}
 			await r2Service.putObj(c, att.key, att.buff, {
-				contentType: att.type,
+				contentType: att.mimeType || att.contentType || att.type || 'application/octet-stream',
 				contentDisposition: `attachment;filename=${att.filename}`
 			});
 		}
 
+	},
+
+	async finalizeSendUploads(c, attList, userId) {
+		for (const item of attList || []) {
+			if (!item.uploadToken) continue;
+			await orm(c).update(attachmentUpload).set({consumed: 1}).where(and(
+				eq(attachmentUpload.token, item.uploadToken), eq(attachmentUpload.userId, userId)
+			)).run();
+		}
 	},
 
 	async saveArticleAtt(c, attDataList, userId, accountId, emailId) {

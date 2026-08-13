@@ -22,6 +22,20 @@ import domainUtils from '../utils/domain-uitls';
 import account from "../entity/account";
 import { att } from '../entity/att';
 import telegramService from './telegram-service';
+import trackingService, { buildTrackedHtml, rewriteTrackedLinks } from './tracking-service';
+import reliabilityService from './reliability-service';
+import jwtUtils from '../utils/jwt-utils';
+import sendJobService from './send-job-service';
+
+export function appendAccountSignature(html, text, accountRow, sendType) {
+	if (!accountRow?.signatureEnabled || (sendType === 'reply' && !accountRow.signatureOnReply)) return {html, text};
+	const signatureHtml = accountRow.signatureHtml || '';
+	const signatureText = accountRow.signatureText || '';
+	return {
+		html: `${html || ''}<div data-cloud-mail-signature="true"><br>${signatureHtml}</div>`,
+		text: `${text || ''}${signatureText ? `\n\n${signatureText}` : ''}`
+	};
+}
 
 const emailService = {
 
@@ -162,11 +176,14 @@ const emailService = {
 			content, //邮件内容
 			subject, //邮件标题
 			attachments = [] //附件
+			,readReceiptRequested
+			,trackingEnabled
+			,priority
+			,unsubscribeEnabled
+			,idempotencyKey
 		} = params;
 
-		const { resendTokens, r2Domain, send, domainList } = await settingService.query(c);
-
-		let { imageDataList, html } = await attService.toImageUrlHtml(c, content);
+		const { resendTokens, r2Domain, send, domainList, customDomain } = await settingService.query(c);
 
 		//判断是否关闭发件功能
 		if (send === settingConst.send.CLOSE) {
@@ -221,6 +238,63 @@ const emailService = {
 			throw new BizError(t('sendEmailNotCurUser'));
 		}
 
+		if (receiveEmail.length > 1) {
+			const batchKey = String(idempotencyKey || crypto.randomUUID()).slice(0, 100);
+			const results = [];
+			for (let index = 0; index < receiveEmail.length; index++) {
+				const recipientEmail = receiveEmail[index];
+				const rows = await this.send(c, {
+					...params,
+					receiveEmail: [recipientEmail],
+					idempotencyKey: `${batchKey}:${recipientEmail.toLowerCase()}`,
+					_splitContinuation: index > 0
+				}, userId);
+				results.push(...rows);
+			}
+			return results;
+		}
+
+		const recipientEmail = receiveEmail[0];
+		const rateKey = `send-rate:${userId}:${dayjs().format('YYYY-MM-DD-HH')}`;
+		const currentRate = Number(await c.env.kv.get(rateKey) || 0);
+		const hourlyLimit = Math.max(1, Number(c.env.send_hourly_limit || 200));
+		if (currentRate >= hourlyLimit) throw new BizError(`Hourly send limit reached (${hourlyLimit})`, 429);
+		const recipientInternal = domainList.includes('@' + emailUtils.getDomain(recipientEmail));
+		if (!recipientInternal && await reliabilityService.isSuppressed(c, userId, recipientEmail)) {
+			throw new BizError(`Recipient is suppressed: ${recipientEmail}`, 403);
+		}
+		idempotencyKey = String(idempotencyKey || crypto.randomUUID()).slice(0, 220);
+		const existingEmail = await orm(c).select().from(email).where(and(eq(email.userId, userId), eq(email.idempotencyKey, idempotencyKey))).get();
+		if (existingEmail) return [existingEmail];
+
+		const signed = appendAccountSignature(content, text, accountRow, sendType);
+		let signedHtml = signed.html;
+		text = signed.text;
+		priority = ['high', 'normal', 'low'].includes(priority) ? priority : (accountRow.defaultPriority || 'normal');
+		trackingEnabled = trackingEnabled == null ? !!accountRow.defaultTracking : !!trackingEnabled;
+		readReceiptRequested = readReceiptRequested == null ? !!accountRow.defaultReadReceipt : !!readReceiptRequested;
+		unsubscribeEnabled = unsubscribeEnabled == null ? !!accountRow.defaultUnsubscribe : !!unsubscribeEnabled;
+		idempotencyKey = String(idempotencyKey || crypto.randomUUID()).slice(0, 120);
+		const templateVariables = {...(params.templateVariables || {}), customer_email: recipientEmail, email: recipientEmail};
+		const renderVariables = value => String(value || '').replace(/\{\{\s*([a-zA-Z0-9_]+)\s*}}/g, (match, key) => templateVariables[key] == null ? match : String(templateVariables[key]));
+		subject = renderVariables(subject);
+		signedHtml = renderVariables(signedHtml);
+		text = renderVariables(text);
+		let unsubscribeUrl = '';
+		if (!recipientInternal && unsubscribeEnabled) {
+			const unsubscribeToken = await jwtUtils.generateToken(
+				c,
+				{unsubscribe: true, userId, email: recipientEmail, idempotencyKey},
+				undefined,
+				0
+			);
+			unsubscribeUrl = `${trackingService.trackingOrigin(c, customDomain)}/api/unsubscribe/${unsubscribeToken}`;
+			signedHtml += `<p style="font-size:12px;color:#777"><a href="${unsubscribeUrl}">Unsubscribe</a></p>`;
+			text += `\n\nUnsubscribe: ${unsubscribeUrl}`;
+		}
+		let { imageDataList, html } = await attService.toImageUrlHtml(c, signedHtml);
+		const resolvedAttachments = await attService.resolveSendAttachments(c, attachments, userId, !!params._splitContinuation);
+
 		if (c.env.admin !== userRow.email) {
 			//用户没有这个域名的使用权限
 			if(!roleService.hasAvailDomainPerm(roleRow.availDomain, accountRow.email)) {
@@ -259,21 +333,37 @@ const emailService = {
 		}
 
 		let sendResult = {};
+		// A shared provider send can contain multiple recipients. Its tracking data is
+		// therefore message-level; send recipients separately when per-recipient data is required.
+		const trackingToken = allInternal || !trackingEnabled
+			? null
+			: await trackingService.idempotentToken(c, idempotencyKey);
+		const outgoingHtml = trackingToken
+			? buildTrackedHtml(
+				rewriteTrackedLinks(html, `${trackingService.trackingOrigin(c, customDomain)}/api/track/click`, trackingToken),
+				trackingService.openUrl(c, customDomain, trackingToken)
+			)
+			: html;
 
 		//存在站外邮箱时，如果配置了 Cloudflare Email Service 就优先使用，否则使用 Resend
 		if (!allInternal) {
 
-			if (useCloudflareEmail) {
+			try {
+				if (useCloudflareEmail) {
 				sendResult = await this.sendByCloudflareEmail(c, {
 					name,
 					accountEmail: accountRow.email,
 					receiveEmail,
 					subject,
 					text,
-					html,
-					attachments: [...imageDataList, ...attachments],
+					html: outgoingHtml,
+					attachments: [...imageDataList, ...resolvedAttachments],
 					sendType,
-					messageId: emailRow.messageId
+					messageId: emailRow.messageId,
+					readReceiptRequested,
+					priority,
+					unsubscribeUrl,
+					idempotencyKey
 				});
 			} else {
 				sendResult = await this.sendByResend(resendToken, {
@@ -282,11 +372,19 @@ const emailService = {
 					receiveEmail,
 					subject,
 					text,
-					html,
-					attachments: [...imageDataList, ...attachments],
+					html: outgoingHtml,
+					attachments: [...imageDataList, ...resolvedAttachments],
 					sendType,
-					messageId: emailRow.messageId
+					messageId: emailRow.messageId,
+					readReceiptRequested,
+					priority,
+					unsubscribeUrl,
+					idempotencyKey
 				});
+				}
+			} catch (error) {
+				if (!params._retryJob) await sendJobService.scheduleFailure(c, {...params, receiveEmail: [recipientEmail], idempotencyKey}, userId, error);
+				throw error;
 			}
 
 		}
@@ -295,6 +393,7 @@ const emailService = {
 
 
 		if (error) {
+			if (!params._retryJob) await sendJobService.scheduleFailure(c, {...params, receiveEmail: [recipientEmail], idempotencyKey}, userId, error);
 			throw new BizError(error.message);
 		}
 
@@ -315,6 +414,12 @@ const emailService = {
 		emailData.type = emailConst.type.SEND;
 		emailData.userId = userId;
 		emailData.resendEmailId = data?.id;
+		emailData.messageId = useCloudflareEmail ? (data?.id || '') : '';
+		emailData.readReceiptRequested = readReceiptRequested ? 1 : 0;
+		emailData.trackingEnabled = trackingEnabled ? 1 : 0;
+		emailData.priority = priority;
+		emailData.idempotencyKey = idempotencyKey;
+		emailData.unsubscribeEnabled = unsubscribeEnabled ? 1 : 0;
 
 		const recipient = [];
 
@@ -336,6 +441,17 @@ const emailService = {
 
 		//保存到数据库并返回结果
 		const emailResult = await orm(c).insert(email).values(emailData).returning().get();
+
+		if (trackingToken) {
+			const tracking = await trackingService.createTracking(c, {
+				emailId: emailResult.emailId,
+				userId,
+				recipientEmail: receiveEmail.join(', '),
+				token: trackingToken,
+				providerEmailId: data?.id
+			});
+			await trackingService.recordInitial(c, tracking, useCloudflareEmail ? 'delivered' : 'sent');
+		}
 
 		//保存内嵌附件
 		if (imageDataList.length > 0) {
@@ -360,6 +476,16 @@ const emailService = {
 		if (allInternal) {
 			await this.HandleOnSiteEmail(c, receiveEmail, emailResult, attList);
 		}
+
+		await reliabilityService.recordContact(c, userId, recipientEmail, emailResult.emailId);
+		await reliabilityService.audit(c, userId, 'email.send', 'email', emailResult.emailId, {
+			recipient: recipientEmail,
+			priority,
+			trackingEnabled,
+			readReceiptRequested,
+			unsubscribeEnabled
+		});
+		await c.env.kv.put(rateKey, String(currentRate + 1), {expirationTtl: 60 * 60 * 2});
 
 		const dateStr = dayjs().format('YYYY-MM-DD');
 		let daySendTotal = await c.env.kv.get(kvConst.SEND_DAY_COUNT + dateStr);
@@ -395,12 +521,20 @@ const emailService = {
 			sendForm.attachments = attachments;
 		}
 
+		const headers = {};
 		if (params.sendType === 'reply' && params.messageId) {
-			sendForm.headers = {
+			Object.assign(headers, {
 				'in-reply-to': params.messageId,
 				'references': params.messageId
-			};
+			});
 		}
+		if (params.readReceiptRequested) headers['Disposition-Notification-To'] = params.accountEmail;
+		Object.assign(headers, this.priorityHeaders(params.priority));
+		if (params.unsubscribeUrl) {
+			headers['List-Unsubscribe'] = `<${params.unsubscribeUrl}>`;
+			headers['List-Unsubscribe-Post'] = 'List-Unsubscribe=One-Click';
+		}
+		if (Object.keys(headers).length) sendForm.headers = headers;
 
 		const result = await c.env.email.send(sendForm);
 
@@ -423,14 +557,28 @@ const emailService = {
 			attachments: await this.toResendAttachments(params.attachments)
 		};
 
-		if (params.sendType === 'reply') {
-			sendForm.headers = {
+		const headers = {};
+		if (params.sendType === 'reply' && params.messageId) {
+			Object.assign(headers, {
 				'in-reply-to': params.messageId,
 				'references': params.messageId
-			};
+			});
 		}
+		if (params.readReceiptRequested) headers['Disposition-Notification-To'] = params.accountEmail;
+		Object.assign(headers, this.priorityHeaders(params.priority));
+		if (params.unsubscribeUrl) {
+			headers['List-Unsubscribe'] = `<${params.unsubscribeUrl}>`;
+			headers['List-Unsubscribe-Post'] = 'List-Unsubscribe=One-Click';
+		}
+		if (Object.keys(headers).length) sendForm.headers = headers;
 
-		return await resend.emails.send(sendForm);
+		return await resend.emails.send(sendForm, {idempotencyKey: params.idempotencyKey});
+	},
+
+	priorityHeaders(priority) {
+		if (priority === 'high') return {'Importance': 'high', 'Priority': 'urgent', 'X-Priority': '1'};
+		if (priority === 'low') return {'Importance': 'low', 'Priority': 'non-urgent', 'X-Priority': '5'};
+		return {'Importance': 'normal', 'Priority': 'normal', 'X-Priority': '3'};
 	},
 
 	async toCloudflareAttachments(attachments) {
@@ -592,8 +740,7 @@ const emailService = {
 					}
 
 				}
-
-				emailDataList.push(emailValues);
+					emailDataList.push(emailValues);
 
 			} else {
 
@@ -736,11 +883,13 @@ const emailService = {
 		emailIds = emailIds.split(',').map(Number);
 		await attService.removeByEmailIds(c, emailIds);
 		await starService.removeByEmailIds(c, emailIds);
+		await trackingService.removeByEmailIds(c, emailIds);
 		await orm(c).delete(email).where(inArray(email.emailId, emailIds)).run();
 	},
 
 	async physicsDeleteUserIds(c, userIds) {
 		await attService.removeByUserIds(c, userIds);
+		await trackingService.removeByUserIds(c, userIds);
 		await orm(c).delete(email).where(inArray(email.userId, userIds)).run();
 	},
 
@@ -857,9 +1006,9 @@ const emailService = {
 			query.orderBy(desc(email.emailId));
 		}
 
-		const listQuery = await query.limit(size).all();
-		const totalQuery = await queryCount.get();
-		const latestEmailQuery = await orm(c).select().from(email)
+		const listQuery = query.limit(size).all();
+		const totalQuery = queryCount.get();
+		const latestEmailQuery = orm(c).select().from(email)
 			.where(and(
 				eq(email.type, emailConst.type.RECEIVE),
 				ne(email.status, emailConst.status.SAVING)
@@ -974,12 +1123,15 @@ const emailService = {
 		}
 
 		await attService.removeByEmailIds(c, emailIds);
+		await trackingService.removeByEmailIds(c, emailIds);
 
 		await orm(c).delete(email).where(conditions.length > 1 ? and(...conditions) : conditions[0]).run();
 	},
 
 	async physicsDeleteByAccountId(c, accountId) {
 		await attService.removeByAccountId(c, accountId);
+		const rows = await orm(c).select({ emailId: email.emailId }).from(email).where(eq(email.accountId, accountId)).all();
+		await trackingService.removeByEmailIds(c, rows.map(row => row.emailId));
 		await orm(c).delete(email).where(eq(email.accountId, accountId)).run();
 	},
 

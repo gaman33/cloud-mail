@@ -14,15 +14,21 @@ const exclude = [
 	'/oss',
 	'/setting/websiteConfig',
 	'/webhooks',
+	'/track',
 	'/init',
 	'/public/genToken',
 	'/telegram',
 	'/test',
 	'/oauth'
+	,'/unsubscribe'
 ];
 
 const requirePerms = [
 	'/email/send',
+	'/attachment/upload',
+	'/account/setSignature',
+	'/admin/migrate',
+	'/account/setSendPreferences',
 	'/email/delete',
 	'/account/list',
 	'/account/delete',
@@ -63,7 +69,7 @@ const requirePerms = [
 
 const premKey = {
 	'email:delete': ['/email/delete'],
-	'email:send': ['/email/send'],
+	'email:send': ['/email/send', '/attachment/upload', '/account/setSignature', '/account/setSendPreferences'],
 	'account:add': ['/account/add'],
 	'account:query': ['/account/list'],
 	'account:delete': ['/account/delete'],

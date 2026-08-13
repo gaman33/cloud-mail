@@ -6,6 +6,10 @@ import emailService from './service/email-service';
 import kvObjService from './service/kv-obj-service';
 import oauthService from "./service/oauth-service";
 import analysisService from './service/analysis-service';
+import sendJobService from './service/send-job-service';
+import trackingService from './service/tracking-service';
+import reliabilityService from './service/reliability-service';
+import settingService from './service/setting-service';
 export default {
 	 async fetch(req, env, ctx) {
 
@@ -25,6 +29,8 @@ export default {
 	},
 	email: email,
 	async scheduled(c, env, ctx) {
+		await sendJobService.process({env}, emailService);
+		if (c.cron === '*/5 * * * *') return;
 		if (c.cron === '*/30 * * * *') {
 			await analysisService.refreshEchartsCache({ env })
 			return;
@@ -35,5 +41,8 @@ export default {
 		await emailService.completeReceiveAll({ env })
 		await oauthService.clearNoBindOathUser({ env })
 		await analysisService.refreshEchartsCache({ env })
+		const settings = await settingService.query({env});
+		await trackingService.purgeExpired({env}, settings.trackingRetentionDays);
+		await reliabilityService.purgeExpired({env}, settings.auditRetentionDays);
 	},
 };

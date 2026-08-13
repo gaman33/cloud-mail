@@ -52,5 +52,7 @@ export const setting = sqliteTable('setting', {
 	blackFrom: text('black_from').default('').notNull(),
 	aiCode: integer('ai_code').default(1).notNull(),
 	aiCodeFilter: text('ai_code_filter').default('').notNull()
+	,trackingRetentionDays: integer('tracking_retention_days').default(90).notNull()
+	,auditRetentionDays: integer('audit_retention_days').default(180).notNull()
 });
 export default setting

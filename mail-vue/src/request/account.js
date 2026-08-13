@@ -12,6 +12,14 @@ export function accountSetName(accountId,name) {
     return http.put('/account/setName', {name,accountId})
 }
 
+export function accountSetSignature(data) {
+    return http.put('/account/setSignature', data)
+}
+
+export function accountSetSendPreferences(data) {
+    return http.put('/account/setSendPreferences', data)
+}
+
 export function accountDelete(accountId) {
     return http.delete('/account/delete', {params: {accountId}})
 }

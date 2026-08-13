@@ -11,6 +11,7 @@ import roleService from '../service/role-service';
 import userService from '../service/user-service';
 import telegramService from '../service/telegram-service';
 import aiService from '../service/ai-service';
+import trackingService from '../service/tracking-service';
 
 export async function email(message, env, ctx) {
 
@@ -84,6 +85,10 @@ export async function email(message, env, ctx) {
 				return;
 			}
 
+		}
+
+		if (account && await trackingService.recordReadReceipt({env}, content, email, account.accountId)) {
+			return;
 		}
 
 
