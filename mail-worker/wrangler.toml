@@ -66,4 +66,4 @@ AWS_SES_SNS_TOPIC_ARN = "arn:aws:sns:ap-southeast-1:795782340138:cloud-mail-ses-
 #jwt_secret = ""			#jwt令牌的密钥,随便填一串字符串
 
 [build]
-command = "npm --prefix ../mail-vue run build"
+command = "npx pnpm@9.15.9 --dir ../mail-vue install --frozen-lockfile && npx pnpm@9.15.9 --dir ../mail-vue run build"
