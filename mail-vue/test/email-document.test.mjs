@@ -7,13 +7,21 @@ test('extracts a malformed nested body without the oversized outer wrapper', () 
     <table width="100%"><tr><td width="1204">
     <body style="max-width:602px;margin:0 auto" dir="ltr">
       <table id="email_table" style="max-width:602px"><tr><td>WhatsApp content</td></tr></table>
-    </body></td></tr></table></html>`
+    </body></td></tr><tr><td>WhatsApp tail content</td></tr></table></html>`
 
   const document = buildEmailDocument(html)
   assert.match(document, /WhatsApp content/)
+  assert.match(document, /WhatsApp tail content/)
   assert.match(document, /body style="max-width:602px;margin:0 auto" dir="ltr"/)
   assert.doesNotMatch(document, /width="1204"/)
+  assert.match(document, /width="100%"/)
   assert.match(document, /table \{ max-width: 100% !important; \}/)
+})
+
+test('keeps a normal body isolated from trailing document garbage', () => {
+  const document = buildEmailDocument('<html><head></head><body><p>Message</p></body><p>Ignore me</p></html>')
+  assert.match(document, /<body><p>Message<\/p><\/body>/)
+  assert.doesNotMatch(document, /Ignore me/)
 })
 
 test('keeps fragments that do not contain a body element', () => {
