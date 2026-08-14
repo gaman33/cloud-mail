@@ -52,6 +52,24 @@ const attService = {
 		let total = 0;
 		const resolved = [];
 		for (const item of attachments) {
+			if (item.sourceAttachmentId) {
+				const source = await this.selectOwnedAttachment(c, item.sourceAttachmentId, userId);
+				if (!source) throw new BizError('Forwarded attachment is unavailable');
+				const obj = await r2Service.getObj(c, source.key);
+				if (!obj) throw new BizError('Forwarded attachment data is no longer available');
+				const content = obj instanceof ArrayBuffer ? obj : await obj.arrayBuffer();
+				total += Number(source.size || content.byteLength || 0);
+				resolved.push({
+					sourceAttachmentId: source.attId,
+					filename: source.filename,
+					size: source.size,
+					contentType: source.mimeType,
+					mimeType: source.mimeType,
+					type: source.mimeType,
+					content
+				});
+				continue;
+			}
 			if (!item.uploadToken) {
 				const content = String(item.content || '').replace(/^data:[^,]*,/, '').replace(/\s+/g, '');
 				const estimatedSize = content ? Math.floor(content.length * 3 / 4) : Number(item.size || 0);
@@ -75,6 +93,14 @@ const attService = {
 		}
 		if (total > MAX_TOTAL_ATTACHMENT_SIZE) throw new BizError('Attachments exceed the 25 MB total limit');
 		return resolved;
+	},
+
+	selectOwnedAttachment(c, attachmentId, userId) {
+		return orm(c).select().from(att).where(and(
+			eq(att.attId, Number(attachmentId)),
+			eq(att.userId, userId),
+			eq(att.type, attConst.type.ATT)
+		)).get();
 	},
 
 	async addAtt(c, attachments) {
@@ -216,6 +242,21 @@ const attService = {
 		const attDataList = [];
 
 		for (let att of attList) {
+			if (att.sourceAttachmentId) {
+				const source = await this.selectOwnedAttachment(c, att.sourceAttachmentId, userId);
+				if (!source) throw new BizError('Forwarded attachment is unavailable');
+				attDataList.push({
+					userId,
+					accountId,
+					emailId,
+					key: source.key,
+					size: source.size,
+					filename: source.filename,
+					mimeType: source.mimeType,
+					type: attConst.type.ATT
+				});
+				continue;
+			}
 			if (att.uploadToken) {
 				const upload = await orm(c).select().from(attachmentUpload).where(and(
 					eq(attachmentUpload.token, att.uploadToken), eq(attachmentUpload.userId, userId)
@@ -241,6 +282,7 @@ const attService = {
 		await orm(c).insert(att).values(attDataList).run();
 
 		for (let att of attList) {
+			if (att.sourceAttachmentId) continue;
 			if (att.uploadToken && consumeUploads) {
 				await orm(c).update(attachmentUpload).set({consumed: 1}).where(and(
 					eq(attachmentUpload.token, att.uploadToken), eq(attachmentUpload.userId, userId)

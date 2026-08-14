@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { sanitizeSignatureHtml } from '../src/service/account-service';
-import { appendAccountSignature } from '../src/service/email-service';
+import { appendAccountSignature, normalizeRecipientFields } from '../src/service/email-service';
 import { parseReadReceipt } from '../src/service/tracking-service';
 import { renderTemplate } from '../src/service/template-service';
 
@@ -17,6 +17,18 @@ describe('phase two helpers', () => {
 		const account = {signatureEnabled: 1, signatureOnReply: 1, signatureHtml: '<b>Alice</b>', signatureText: 'Alice'};
 		expect(appendAccountSignature('<p>Hello</p>', 'Hello', account, 'new').html).toContain('data-cloud-mail-signature');
 		expect(appendAccountSignature('', '', {...account, signatureOnReply: 0}, 'reply').html).toBe('');
+		expect(appendAccountSignature('<p>Hello</p>', 'Hello', account, 'new', false).html).toBe('<p>Hello</p>');
+	});
+
+	it('separates primary and cc recipients and removes duplicates', () => {
+		const recipients = normalizeRecipientFields(
+			['Customer@example.com'],
+			['sales@example.com', 'customer@example.com']
+		);
+		expect(recipients).toEqual({
+			receiveEmail: ['Customer@example.com'],
+			ccEmail: ['sales@example.com']
+		});
 	});
 
 	it('recognizes standards-based displayed MDN receipts', () => {

@@ -14,7 +14,7 @@
                :type="'draft'"
   >
     <template #name="props">
-      <span class="send-email">{{ props.email.receiveEmail?.join(',') || '(' + $t('noRecipient') + ')' }}</span>
+      <span class="send-email">{{ draftRecipients(props.email) || '(' + $t('noRecipient') + ')' }}</span>
     </template>
     <template #subject="props">
       {{ props.email.subject || '(' + $t('noSubject') + ')' }}
@@ -48,7 +48,7 @@ watch(() => draftStore.setDraft, async () => {
   delete draft.draftId
   delete draft.attachments
 
-  if (!draft.content && !draft.subject && !(draft.receiveEmail.length > 0)) {
+  if (!draft.content && !draft.subject && !(draft.receiveEmail?.length > 0) && !(draft.ccEmail?.length > 0) && !(attachments?.length > 0)) {
     await db.value.draft.delete(draftId);
     await db.value.att.delete(draftId);
     draftStore.refreshList++
@@ -80,6 +80,12 @@ function getEmailList() {
 async function deleteDraft(draftIds) {
   await db.value.draft.bulkDelete(draftIds);
   draftStore.refreshList++
+}
+
+function draftRecipients(draft) {
+  const to = Array.isArray(draft.receiveEmail) ? draft.receiveEmail : []
+  const cc = Array.isArray(draft.ccEmail) ? draft.ccEmail : []
+  return [...to, ...cc].join(',')
 }
 
 async function jumpContent(email) {

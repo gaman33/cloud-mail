@@ -15,7 +15,8 @@
         </div>
       </div>
       <div class="container">
-        <el-input-tag  @add-tag="addTagChange" tag-type="primary" @input="inputChange" size="default" v-model="form.receiveEmail" >
+        <div class="recipient-fields">
+          <el-input-tag  @add-tag="addTagChange" tag-type="primary" @input="inputChange" size="default" v-model="form.receiveEmail" >
           <template #prefix>
             <div class="item-title" >{{ $t('recipient') }}</div>
             <el-select
@@ -39,10 +40,21 @@
           </template>
           <template #suffix>
             <div style="display: flex;margin-right: 3px;">
+              <button class="recipient-option" type="button" @click.stop="showCc = !showCc">{{ $t('ccRecipient') }}</button>
               <Icon icon="fa7-solid:user-plus" width="20" height="20" class="add-contact" @click.stop="openContacts" />
             </div>
           </template>
-        </el-input-tag>
+          </el-input-tag>
+          <el-input-tag
+              v-if="showCc"
+              v-model="form.ccEmail"
+              tag-type="info"
+              size="default"
+              @add-tag="addCcTagChange"
+          >
+            <template #prefix><div class="item-title">{{ $t('ccRecipient') }}</div></template>
+          </el-input-tag>
+        </div>
         <el-input v-model="form.subject" :placeholder="t('subject')" />
         <div class="send-options">
           <span>{{ $t('priority') }}</span>
@@ -54,6 +66,8 @@
           <el-checkbox v-model="form.trackingEnabled">{{ $t('emailTracking') }}</el-checkbox>
           <el-checkbox v-model="form.readReceiptRequested">{{ $t('requestReadReceipt') }}</el-checkbox>
           <el-checkbox v-model="form.unsubscribeEnabled">{{ $t('includeUnsubscribe') }}</el-checkbox>
+          <el-checkbox v-model="form.includeSignature" :disabled="!activeSignatureHtml">{{ $t('includeSignature') }}</el-checkbox>
+          <el-button size="small" @click="openSignatureEditor">{{ $t('editSignature') }}</el-button>
           <el-dropdown @command="applyLibraryItem">
             <el-button size="small">{{ $t('templatesAndSnippets') }}</el-button>
             <template #dropdown>
@@ -76,6 +90,7 @@
               <Icon v-bind="getIconByName(item.filename)"/>
               <span class="att-filename">{{ item.filename }}</span>
               <span class="att-size">{{ formatBytes(item.size) }}</span>
+              <el-tag v-if="item.forwarded" size="small" type="info">{{ $t('forwardedAttachment') }}</el-tag>
               <Icon style="cursor: pointer;" icon="material-symbols-light:close-rounded" @click="delAtt(index)"
                     width="22" height="22"/>
             </div>
@@ -88,6 +103,19 @@
         </div>
       </div>
     </div>
+    <el-dialog v-model="signatureShow" :title="$t('emailSignature')" append-to-body class="compose-signature-dialog">
+      <div class="signature-options">
+        <el-switch v-model="signatureForm.signatureEnabled" :active-text="$t('enableSignature')" />
+        <el-switch v-model="signatureForm.signatureOnReply" :active-text="$t('signatureOnReply')" />
+      </div>
+      <div class="signature-editor">
+        <tinyEditor :def-value="signatureForm.signatureHtml" editor-id="compose-signature-editor" @change="signatureChange" />
+      </div>
+      <template #footer>
+        <el-button @click="signatureShow = false">{{ $t('cancel') }}</el-button>
+        <el-button type="primary" :loading="signatureLoading" @click="saveSignature">{{ $t('save') }}</el-button>
+      </template>
+    </el-dialog>
     <el-dialog top="10vh" v-model="showContacts" @closed="clearSelectContact" :title="t('recentContacts')">
       <el-table ref="contactsTabRef" row-key="email" :data="contacts" style="height: 445px">
         <el-table-column type="selection" width="32" />
@@ -117,7 +145,6 @@ import {h, nextTick, onMounted, onUnmounted, reactive, ref, toRaw, computed} fro
 import {Icon} from "@iconify/vue";
 import {useUserStore} from "@/store/user.js";
 import {emailSend, attachmentUpload, attachmentCancel} from "@/request/email.js";
-import {isEmail} from "@/utils/verify-utils.js";
 import {useAccountStore} from "@/store/account.js";
 import {useEmailStore} from "@/store/email.js";
 import {formatBytes} from "@/utils/file-utils.js";
@@ -134,6 +161,8 @@ import {useI18n} from "vue-i18n";
 import router from "@/router/index.js";
 import {ElMessageBox} from "element-plus";
 import {templateList} from '@/request/reliability.js'
+import {accountSetSignature} from '@/request/account.js'
+import {addUniqueAddresses, toForwardAttachments} from './compose-utils.js'
 
 defineExpose({
   open,
@@ -157,10 +186,15 @@ let sending = false
 const defValue = ref('')
 const contactsTabRef = ref({})
 const showContacts = ref(false)
+const showCc = ref(false)
+const signatureShow = ref(false)
+const signatureLoading = ref(false)
+const composeAccount = ref(null)
 const mySelect = ref()
 let selectStatus = false
 const backReply = reactive({
   receiveEmail: [],
+  ccEmail: [],
   subject: '',
   content: '',
   sendType: ''
@@ -182,7 +216,11 @@ const form = reactive({
   priority: 'normal',
   idempotencyKey: '',
   draftId: null,
+  includeSignature: false,
 })
+
+const signatureForm = reactive({accountId: 0, signatureHtml: '', signatureText: '', signatureEnabled: false, signatureOnReply: true})
+const activeSignatureHtml = computed(() => composeAccount.value?.signatureHtml || composeAccount.value?.signatureText || '')
 
 const selectRecipientList = ref([])
 const libraryItems = ref([])
@@ -273,21 +311,50 @@ function inputChange(value) {
 }
 
 function addTagChange(val) {
-
-  const emails = Array.from(new Set(
-      val.split(/[,，]/).map(item => item.trim()).filter(item => item)
-  ));
-
   form.receiveEmail.splice(form.receiveEmail.length - 1, 1)
+  const {addresses, invalid} = addUniqueAddresses(form.receiveEmail, val, form.ccEmail)
+  const changed = addresses.length > form.receiveEmail.length
+  form.receiveEmail = addresses
+  if (invalid.length) ElMessage({message: t('invalidRecipientMsg'), type: 'error', plain: true})
+  if (selectStatus && changed) openSelect()
+}
 
-  let has = false
-  emails.forEach(email => {
-    if (isEmail(email) && !form.receiveEmail.includes(email)) {
-      form.receiveEmail.push(email)
-      has = true
-    }
+function addCcTagChange(value) {
+  form.ccEmail.splice(form.ccEmail.length - 1, 1)
+  const {addresses, invalid} = addUniqueAddresses(form.ccEmail, value, form.receiveEmail)
+  form.ccEmail = addresses
+  if (invalid.length) ElMessage({message: t('invalidRecipientMsg'), type: 'error', plain: true})
+}
+
+function openSignatureEditor() {
+  const account = composeAccount.value
+  if (!account) return
+  Object.assign(signatureForm, {
+    accountId: account.accountId,
+    signatureHtml: account.signatureHtml || '',
+    signatureText: account.signatureText || '',
+    signatureEnabled: !!account.signatureEnabled,
+    signatureOnReply: account.signatureOnReply !== 0
   })
-  if (selectStatus && has) openSelect()
+  signatureShow.value = true
+}
+
+function signatureChange(html, text) {
+  signatureForm.signatureHtml = html
+  signatureForm.signatureText = text
+}
+
+async function saveSignature() {
+  signatureLoading.value = true
+  try {
+    const saved = await accountSetSignature(signatureForm)
+    Object.assign(composeAccount.value, saved)
+    form.includeSignature = !!saved.signatureEnabled && (form.sendType !== 'reply' || saved.signatureOnReply !== 0)
+    signatureShow.value = false
+    ElMessage({message: t('saveSuccessMsg'), type: 'success', plain: true})
+  } finally {
+    signatureLoading.value = false
+  }
 }
 
 function clearContent() {
@@ -433,6 +500,8 @@ async function sendEmail() {
       form.subject = ''
       form.content = ''
       form.receiveEmail = []
+      form.ccEmail = []
+      form.attachments = []
       draftStore.setDraft = {...toRaw(form)}
     }
 
@@ -459,16 +528,19 @@ async function sendEmail() {
 }
 
 function addRecipientRecord() {
+  const recipients = [...form.receiveEmail, ...form.ccEmail]
   writerStore.sendRecipientRecord = writerStore.sendRecipientRecord.filter(
-      email => !form.receiveEmail.includes(email)
+      email => !recipients.includes(email)
   );
 
-  writerStore.sendRecipientRecord.unshift(...form.receiveEmail);
+  writerStore.sendRecipientRecord.unshift(...recipients);
   writerStore.sendRecipientRecord = writerStore.sendRecipientRecord.slice(0, 500);
 }
 
 function resetForm() {
   form.receiveEmail = []
+  form.ccEmail = []
+  showCc.value = false
   form.subject = ''
   form.content = ''
   form.manyType = null
@@ -481,6 +553,7 @@ function resetForm() {
   form.sendType = ''
   form.emailId = 0
   form.draftId = null
+  form.includeSignature = false
   backReply.content = ''
   backReply.subject = ''
   backReply.receiveEmail = []
@@ -504,6 +577,7 @@ function openForward(email) {
 
   form.subject = email.subject
   form.sendType = 'forward'
+  form.attachments = toForwardAttachments(email.attList)
 
   defValue.value = ''
 
@@ -572,6 +646,7 @@ function formatImage(content) {
 
 function open() {
 	const selectedAccount = accountStore.currentAccount.email ? accountStore.currentAccount : userStore.user.account
+  composeAccount.value = selectedAccount
   if (!accountStore.currentAccount.email) {
     form.sendEmail = userStore.user.email;
     form.accountId = userStore.user.account.accountId;
@@ -585,12 +660,16 @@ function open() {
   form.trackingEnabled = selectedAccount.defaultTracking !== 0
   form.readReceiptRequested = !!selectedAccount.defaultReadReceipt
   form.unsubscribeEnabled = !!selectedAccount.defaultUnsubscribe
+  form.includeSignature = !!selectedAccount.signatureEnabled && (form.sendType !== 'reply' || selectedAccount.signatureOnReply !== 0)
   show.value = true;
   editor.value.focus()
 }
 
 function openDraft(draft) {
   Object.assign(form, {...draft})
+  form.ccEmail = Array.isArray(draft.ccEmail) ? draft.ccEmail : []
+  showCc.value = form.ccEmail.length > 0
+  composeAccount.value = accountStore.currentAccount.email ? accountStore.currentAccount : userStore.user.account
   defValue.value = ''
   setTimeout(() => defValue.value = form.content)
   show.value = true;
@@ -626,7 +705,7 @@ function close() {
     return;
   }
 
-  if (!(form.content || form.subject || form.receiveEmail.length > 0)) {
+  if (!(form.content || form.subject || form.receiveEmail.length > 0 || form.ccEmail.length > 0 || form.attachments.length > 0)) {
     show.value = false
     resetForm()
     return;
@@ -683,6 +762,21 @@ function close() {
 
 .write-select .el-select-dropdown {
   min-width: 0 !important;
+}
+
+.compose-signature-dialog {
+  width: min(760px, calc(100% - 40px)) !important;
+}
+
+.compose-signature-dialog .signature-options {
+  display: flex;
+  gap: 24px;
+  margin-bottom: 12px;
+}
+
+.compose-signature-dialog .signature-editor {
+  height: 320px;
+  border: 1px solid var(--el-border-color);
 }
 </style>
 <style scoped lang="scss">
@@ -763,6 +857,11 @@ function close() {
       display: grid;
       grid-template-rows: auto auto auto minmax(0, 1fr) auto;
       gap: 15px;
+
+      .recipient-fields {
+        display: grid;
+        gap: 8px;
+      }
 
       .item-title {
       }
@@ -850,6 +949,14 @@ function close() {
 
 .add-contact {
   color: var(--regular-text-color)
+}
+
+.recipient-option {
+  border: 0;
+  background: transparent;
+  color: var(--el-color-primary);
+  cursor: pointer;
+  padding: 0 8px;
 }
 
 .write-select {
