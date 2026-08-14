@@ -453,6 +453,8 @@ const en = {
     ,editSignature: 'Edit signature'
     ,forwardedAttachment: 'Original attachment'
     ,invalidRecipientMsg: 'A To or Cc address is invalid'
+    ,normalDeliveryChannel: 'Daily mail (Resend)'
+    ,sesMarketingChannel: 'Marketing (Amazon SES)'
 }
 
 export default en

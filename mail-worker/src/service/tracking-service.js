@@ -98,13 +98,14 @@ const trackingService = {
 		return `${this.trackingOrigin(c, customDomain)}/api/track/open/${token}.gif`;
 	},
 
-	async createTracking(c, { emailId, userId, recipientEmail, token, providerEmailId }) {
+	async createTracking(c, { emailId, userId, recipientEmail, token, providerEmailId, provider = 'resend' }) {
 		return orm(c).insert(emailTracking).values({
 			emailId,
 			userId,
 			recipientEmail,
 			token,
-			providerEmailId
+			providerEmailId,
+			provider
 		}).returning().get();
 	},
 
@@ -154,9 +155,12 @@ const trackingService = {
 		return true;
 	},
 
-	async recordProviderEvent(c, body, providerEventId) {
+	async recordProviderEvent(c, body, providerEventId, provider = 'resend') {
 		const data = body.data || {};
-		const emailRow = await orm(c).select().from(email).where(eq(email.resendEmailId, data.email_id)).get();
+		const emailRow = await orm(c).select().from(email).where(and(
+			eq(email.resendEmailId, data.email_id),
+			eq(email.provider, provider)
+		)).get();
 		if (!emailRow) return null;
 		if (data.message_id && normalizeMessageId(data.message_id) !== normalizeMessageId(emailRow.messageId)) {
 			await orm(c).update(email).set({messageId: normalizeMessageId(data.message_id)}).where(eq(email.emailId, emailRow.emailId)).run();
@@ -180,7 +184,7 @@ const trackingService = {
 			eventType,
 			eventTime,
 			...client,
-			source: 'resend',
+			source: provider,
 			metadata: JSON.stringify(data.bounce || data.failed || {})
 		}).onConflictDoNothing().run();
 

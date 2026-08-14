@@ -32,6 +32,7 @@ const dbInit = {
 		await this.v3_1DB(c);
 		await this.v3_2DB(c);
 		await this.v4_0DB(c);
+		await this.v4_1DB(c);
 		await settingService.refresh(c);
 		return c.text('success');
 	},
@@ -40,8 +41,23 @@ const dbInit = {
 		await this.v3_1DB(c);
 		await this.v3_2DB(c);
 		await this.v4_0DB(c);
+		await this.v4_1DB(c);
 		await settingService.refresh(c);
-		return {version: '4.0', migrated: true};
+		return {version: '4.1', migrated: true};
+	},
+
+	async v4_1DB(c) {
+		const statements = [
+			`ALTER TABLE email ADD COLUMN provider TEXT NOT NULL DEFAULT 'resend';`,
+			`ALTER TABLE email_tracking ADD COLUMN provider TEXT NOT NULL DEFAULT 'resend';`
+		];
+		for (const statement of statements) {
+			try { await c.env.db.prepare(statement).run(); } catch (error) { console.warn(`Skip existing v4.1 column: ${error.message}`); }
+		}
+		await c.env.db.batch([
+			c.env.db.prepare(`CREATE INDEX IF NOT EXISTS idx_email_provider_message ON email(provider, resend_email_id)`),
+			c.env.db.prepare(`CREATE INDEX IF NOT EXISTS idx_email_tracking_provider_message ON email_tracking(provider, provider_email_id)`)
+		]);
 	},
 
 	async v4_0DB(c) {

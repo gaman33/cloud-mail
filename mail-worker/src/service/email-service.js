@@ -27,6 +27,7 @@ import reliabilityService from './reliability-service';
 import jwtUtils from '../utils/jwt-utils';
 import sendJobService from './send-job-service';
 import verifyUtils from '../utils/verify-utils';
+import sesService from './ses-service';
 
 export function appendAccountSignature(html, text, accountRow, sendType, includeSignature = null) {
 	if (includeSignature === false || !accountRow?.signatureEnabled || (sendType === 'reply' && !accountRow.signatureOnReply)) return {html, text};
@@ -297,6 +298,7 @@ const emailService = {
 			,idempotencyKey
 			,ccEmail = []
 			,includeSignature
+			,deliveryProvider = 'auto'
 		} = params;
 
 		({receiveEmail, ccEmail} = normalizeRecipientFields(receiveEmail, ccEmail));
@@ -397,6 +399,11 @@ const emailService = {
 		trackingEnabled = trackingEnabled == null ? !!accountRow.defaultTracking : !!trackingEnabled;
 		readReceiptRequested = readReceiptRequested == null ? !!accountRow.defaultReadReceipt : !!readReceiptRequested;
 		unsubscribeEnabled = unsubscribeEnabled == null ? !!accountRow.defaultUnsubscribe : !!unsubscribeEnabled;
+		if (deliveryProvider === 'ses') {
+			if (ccEmail.length) throw new BizError('Amazon SES marketing sends do not support Cc; send one tracked message per customer');
+			trackingEnabled = true;
+			unsubscribeEnabled = true;
+		}
 		idempotencyKey = String(idempotencyKey || crypto.randomUUID()).slice(0, 120);
 		const templateVariables = {...(params.templateVariables || {}), customer_email: recipientEmail, email: recipientEmail};
 		const renderVariables = value => String(value || '').replace(/\{\{\s*([a-zA-Z0-9_]+)\s*}}/g, (match, key) => templateVariables[key] == null ? match : String(templateVariables[key]));
@@ -429,9 +436,13 @@ const emailService = {
 		const domain = emailUtils.getDomain(accountRow.email);
 		const resendToken = resendTokens[domain];
 		const useCloudflareEmail = !!c.env.email;
+		const useSes = deliveryProvider === 'ses';
+		if (!['auto', 'ses'].includes(deliveryProvider)) throw new BizError('Unsupported email delivery provider');
+		if (useSes && allInternal) throw new BizError('Amazon SES marketing is only available for external recipients');
+		const provider = useSes ? 'ses' : (useCloudflareEmail ? 'cloudflare' : (allInternal ? 'cloud_mail' : 'resend'));
 
 		//如果接收方存在站外邮箱，又没有发信服务
-		if (!useCloudflareEmail && !resendToken && !allInternal) {
+		if (!useSes && !useCloudflareEmail && !resendToken && !allInternal) {
 			throw new BizError(t('noSendProvider'));
 		}
 
@@ -472,7 +483,24 @@ const emailService = {
 		if (!allInternal) {
 
 			try {
-				if (useCloudflareEmail) {
+				if (useSes) {
+					sendResult = await sesService.send(c, {
+						name,
+						accountEmail: accountRow.email,
+						receiveEmail,
+						subject,
+						ccEmail,
+						text,
+						html: outgoingHtml,
+						attachments: [...imageDataList, ...resolvedAttachments],
+						sendType,
+						messageId: emailRow.messageId,
+						readReceiptRequested,
+						priorityHeaders: this.priorityHeaders(priority),
+						unsubscribeUrl,
+						userId
+					}, attachments => this.toResendAttachments(attachments));
+				} else if (useCloudflareEmail) {
 				sendResult = await this.sendByCloudflareEmail(c, {
 					name,
 					accountEmail: accountRow.email,
@@ -535,11 +563,12 @@ const emailService = {
 		emailData.content = html;
 		emailData.text = text;
 		emailData.accountId = accountId;
-		emailData.status = useCloudflareEmail ? emailConst.status.DELIVERED : emailConst.status.SENT;
+		emailData.status = useCloudflareEmail && !useSes ? emailConst.status.DELIVERED : emailConst.status.SENT;
 		emailData.type = emailConst.type.SEND;
 		emailData.userId = userId;
 		emailData.resendEmailId = data?.id;
-		emailData.messageId = useCloudflareEmail ? (data?.id || '') : '';
+		emailData.provider = provider;
+		emailData.messageId = data?.messageId || (useCloudflareEmail ? (data?.id || '') : '');
 		emailData.readReceiptRequested = readReceiptRequested ? 1 : 0;
 		emailData.trackingEnabled = trackingEnabled ? 1 : 0;
 		emailData.priority = priority;
@@ -574,9 +603,10 @@ const emailService = {
 				userId,
 				recipientEmail: allRecipients.join(', '),
 				token: trackingToken,
-				providerEmailId: data?.id
+				providerEmailId: data?.id,
+				provider
 			});
-			await trackingService.recordInitial(c, tracking, useCloudflareEmail ? 'delivered' : 'sent');
+			await trackingService.recordInitial(c, tracking, useCloudflareEmail && !useSes ? 'delivered' : 'sent');
 		}
 
 		//保存内嵌附件
@@ -610,7 +640,8 @@ const emailService = {
 			priority,
 			trackingEnabled,
 			readReceiptRequested,
-			unsubscribeEnabled
+			unsubscribeEnabled,
+			provider
 		});
 		await c.env.kv.put(rateKey, String(currentRate + allRecipients.length), {expirationTtl: 60 * 60 * 2});
 
@@ -1023,11 +1054,14 @@ const emailService = {
 	},
 
 	updateEmailStatus(c, params) {
-		const { status, resendEmailId, message } = params;
+		const { status, resendEmailId, message, provider } = params;
 		return orm(c).update(email).set({
 			status: status,
 			message: message
-		}).where(eq(email.resendEmailId, resendEmailId)).returning().get();
+		}).where(and(
+			eq(email.resendEmailId, resendEmailId),
+			...(provider ? [eq(email.provider, provider)] : [])
+		)).returning().get();
 	},
 
 	async selectUserEmailCountList(c, userIds, type, del = isDel.NORMAL) {

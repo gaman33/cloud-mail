@@ -21,6 +21,7 @@ export const email = sqliteTable('email', {
 	type: integer('type').default(0).notNull(),
 	status: integer('status').default(0).notNull(),
 	resendEmailId: text('resend_email_id'),
+	provider: text('provider').default('resend').notNull(),
 	message: text('message'),
 	unread: integer('unread').default(0).notNull(),
 	readReceiptRequested: integer('read_receipt_requested').default(0).notNull(),

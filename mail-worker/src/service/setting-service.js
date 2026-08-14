@@ -236,6 +236,7 @@ const settingService = {
 			linuxdoCallbackUrl: settingRow.linuxdoCallbackUrl,
 			linuxdoSwitch: settingRow.linuxdoSwitch,
 			minEmailPrefix: settingRow.minEmailPrefix
+			,sesMarketingEnabled: c.env.SES_MARKETING_ENABLED === 'true'
 		};
 	},
 
