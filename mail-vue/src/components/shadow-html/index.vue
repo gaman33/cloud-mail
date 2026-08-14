@@ -8,6 +8,7 @@
       title="Email content"
       sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
       referrerpolicy="no-referrer"
+      scrolling="no"
       @load="handleLoad"
     />
   </div>
@@ -29,12 +30,31 @@ const frameHeight = ref(180)
 const documentHtml = computed(() => buildEmailDocument(props.html))
 let resizeObserver = null
 let resizeFrame = 0
+let resizeTimers = []
 
 function cleanupObserver() {
   resizeObserver?.disconnect()
   resizeObserver = null
   if (resizeFrame) cancelAnimationFrame(resizeFrame)
   resizeFrame = 0
+  resizeTimers.forEach(timer => clearTimeout(timer))
+  resizeTimers = []
+}
+
+function measuredHeight(doc) {
+  const baseHeight = Math.max(
+    doc.documentElement?.scrollHeight || 0,
+    doc.documentElement?.offsetHeight || 0,
+    doc.body?.scrollHeight || 0,
+    doc.body?.offsetHeight || 0,
+    180
+  )
+  const viewportTop = doc.defaultView?.scrollY || 0
+  const childHeight = [...(doc.body?.children || [])].reduce((height, element) => {
+    const rect = element.getBoundingClientRect()
+    return Math.max(height, rect.bottom + viewportTop, rect.top + viewportTop + element.scrollHeight)
+  }, 0)
+  return Math.max(baseHeight, childHeight)
 }
 
 function syncHeight() {
@@ -44,16 +64,15 @@ function syncHeight() {
     const doc = frame.value?.contentDocument
     if (!doc) return
 
-    const height = Math.max(
-      doc.documentElement?.scrollHeight || 0,
-      doc.documentElement?.offsetHeight || 0,
-      doc.body?.scrollHeight || 0,
-      doc.body?.offsetHeight || 0,
-      180
-    )
+    const height = measuredHeight(doc)
     const nextHeight = Math.min(Math.ceil(height), 120000)
     if (Math.abs(frameHeight.value - nextHeight) > 1) frameHeight.value = nextHeight
   })
+}
+
+function scheduleHeightSync() {
+  resizeTimers.forEach(timer => clearTimeout(timer))
+  resizeTimers = [0, 100, 350, 1000, 2500].map(delay => setTimeout(syncHeight, delay))
 }
 
 function handleLoad() {
@@ -61,15 +80,19 @@ function handleLoad() {
   const doc = frame.value?.contentDocument
   if (!doc) return
 
+  doc.documentElement.style.overflowY = 'hidden'
+  doc.body.style.overflowY = 'visible'
+
   doc.querySelectorAll('a[href]').forEach(link => {
     link.setAttribute('target', '_blank')
     link.setAttribute('rel', 'noopener noreferrer')
   })
 
-  syncHeight()
+  scheduleHeightSync()
   resizeObserver = new ResizeObserver(syncHeight)
   if (doc.documentElement) resizeObserver.observe(doc.documentElement)
   if (doc.body) resizeObserver.observe(doc.body)
+  doc.body?.querySelectorAll(':scope > *').forEach(element => resizeObserver.observe(element))
   doc.querySelectorAll('img').forEach(image => {
     if (!image.complete) image.addEventListener('load', syncHeight, { once: true })
   })
@@ -79,6 +102,7 @@ watch(() => props.html, async () => {
   cleanupObserver()
   frameHeight.value = 180
   await nextTick()
+  scheduleHeightSync()
 })
 
 onUnmounted(cleanupObserver)
@@ -98,5 +122,6 @@ onUnmounted(cleanupObserver)
   min-height: 180px;
   border: 0;
   background: #fff;
+  overflow: hidden;
 }
 </style>

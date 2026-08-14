@@ -26,6 +26,24 @@ function removeActiveContent(value) {
     .replace(/<\/?form\b[^>]*>/gi, '')
 }
 
+function normalizeOversizedDimensions(value) {
+  return String(value || '')
+    .replace(/\swidth\s*=\s*(?:"(\d{4,})(?:px)?"|'(\d{4,})(?:px)?'|(\d{4,})(?:px)?)/gi, (match, doubleQuoted, singleQuoted, unquoted) => {
+      const width = Number(doubleQuoted || singleQuoted || unquoted)
+      return width > 900 ? ' width="100%"' : match
+    })
+    .replace(/\b(width|min-width)\s*:\s*(\d{4,})px/gi, (match, property, rawWidth) => {
+      return Number(rawWidth) > 900 ? `${property}:100%` : match
+    })
+}
+
+function stripDocumentWrappers(value) {
+  return String(value || '')
+    .replace(/<!doctype[^>]*>/gi, '')
+    .replace(/<\/?html\b[^>]*>/gi, '')
+    .replace(/<\/?body\b[^>]*>/gi, '')
+}
+
 function extractEmailParts(html) {
   const source = String(html || '')
   const headMatch = source.match(/<head\b[^>]*>([\s\S]*?)<\/head\s*>/i)
@@ -33,12 +51,33 @@ function extractEmailParts(html) {
   const bodyOpen = /<body\b([^>]*)>/i.exec(source)
 
   if (bodyOpen) {
+    const shellStart = headMatch ? (headMatch.index || 0) + headMatch[0].length : 0
+    const prefix = source.slice(shellStart, bodyOpen.index)
+      .replace(/<!doctype[^>]*>/gi, '')
+      .replace(/<\/?html\b[^>]*>/gi, '')
+      .trim()
+
+    // Some providers emit <body> inside an outer table and then continue the
+    // actual message after </body>. Preserve that table shell while removing
+    // the invalid nested body tags, otherwise most of the message is lost.
+    if (/<[a-z][^>]*>/i.test(prefix)) {
+      let shellEnd = source.length
+      for (const match of source.matchAll(/<\/html\s*>/gi)) shellEnd = match.index
+      const shell = source.slice(shellStart, shellEnd)
+      return {
+        attributes: safeBodyAttributes(bodyOpen[1]),
+        body: normalizeOversizedDimensions(removeActiveContent(stripDocumentWrappers(shell))),
+        head
+      }
+    }
+
     const contentStart = bodyOpen.index + bodyOpen[0].length
     const closingOffset = source.slice(contentStart).search(/<\/body\s*>/i)
     const contentEnd = closingOffset >= 0 ? contentStart + closingOffset : source.length
     return {
       attributes: safeBodyAttributes(bodyOpen[1]),
-      body: removeActiveContent(source.slice(contentStart, contentEnd))
+      body: normalizeOversizedDimensions(removeActiveContent(source.slice(contentStart, contentEnd))),
+      head
     }
   }
 
@@ -47,7 +86,7 @@ function extractEmailParts(html) {
     .replace(/<head\b[^>]*>[\s\S]*?<\/head\s*>/gi, '')
     .replace(/<\/?html\b[^>]*>/gi, '')
 
-  return {attributes: '', body: removeActiveContent(body), head}
+  return {attributes: '', body: normalizeOversizedDimensions(removeActiveContent(body)), head}
 }
 
 export function buildEmailDocument(html) {
@@ -66,10 +105,13 @@ export function buildEmailDocument(html) {
   <base target="_blank">
   ${head}
   <style>
-    html { background: transparent; overflow-x: auto; }
-    body { box-sizing: border-box; max-width: 100%; overflow-wrap: anywhere; }
-    img { max-width: 100%; }
+    html { width: 100%; min-width: 0 !important; background: transparent; overflow-x: auto; }
+    body { box-sizing: border-box; width: auto !important; min-width: 0 !important; max-width: 100% !important; overflow-wrap: anywhere; }
+    body > table { width: 100% !important; margin-left: auto !important; margin-right: auto !important; }
+    body > table > tbody > tr > td { max-width: 100% !important; }
+    img { max-width: 100%; height: auto; }
     table { max-width: 100% !important; }
+    table, td, th, div { box-sizing: border-box; }
     pre { max-width: 100%; white-space: pre-wrap; word-break: break-word; }
   </style>
 </head>
