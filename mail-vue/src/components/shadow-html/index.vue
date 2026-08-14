@@ -1,11 +1,21 @@
 <template>
-  <div class="content-box" ref="contentBox">
-    <div ref="container" class="content-html"></div>
+  <div class="content-box">
+    <iframe
+      ref="frame"
+      class="email-frame"
+      :style="{ height: `${frameHeight}px` }"
+      :srcdoc="documentHtml"
+      title="Email content"
+      sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+      referrerpolicy="no-referrer"
+      @load="handleLoad"
+    />
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
+import { buildEmailDocument } from './document.js'
 
 const props = defineProps({
   html: {
@@ -14,111 +24,79 @@ const props = defineProps({
   }
 })
 
-const container = ref(null)
-const contentBox = ref(null)
-let shadowRoot = null
+const frame = ref(null)
+const frameHeight = ref(180)
+const documentHtml = computed(() => buildEmailDocument(props.html))
+let resizeObserver = null
+let resizeFrame = 0
 
-function updateContent() {
-  if (!shadowRoot) return;
-
-  // 1. 提取 <body> 的 style 属性（如果存在）
-  const bodyStyleRegex = /<body[^>]*style="([^"]*)"[^>]*>/i;
-  const bodyStyleMatch = props.html.match(bodyStyleRegex);
-  const bodyStyle = bodyStyleMatch ? bodyStyleMatch[1] : '';
-
-  // 2. 移除 <body> 标签（保留内容）
-  const cleanedHtml = props.html.replace(/<\/?body[^>]*>/gi, '');
-
-  // 3. 将 body 的 style 应用到 .shadow-content
-  shadowRoot.innerHTML = `
-    <style>
-      :host {
-        all: initial;
-        width: 100%;
-        height: 100%;
-        font-family: -apple-system, Inter, BlinkMacSystemFont,
-                    'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-        font-size: 14px;
-        line-height: 1.5;
-        color: #13181D;
-        word-break: break-word;
-      }
-
-      h1, h2, h3, h4 {
-          font-size: 18px;
-          font-weight: 700;
-      }
-
-      p {
-        margin: 0;
-      }
-
-      a {
-        text-decoration: none;
-        color: #0E70DF;
-      }
-
-      .shadow-content {
-        background: #FFFFFF;
-        width: fit-content;
-        height: fit-content;
-        min-width: 100%;
-        ${bodyStyle ? bodyStyle : ''} /* 注入 body 的 style */
-      }
-
-      img:not(table img) {
-        max-width: 100%;
-        height: auto !important;
-      }
-
-    </style>
-    <div class="shadow-content">
-      ${cleanedHtml}
-    </div>
-  `;
+function cleanupObserver() {
+  resizeObserver?.disconnect()
+  resizeObserver = null
+  if (resizeFrame) cancelAnimationFrame(resizeFrame)
+  resizeFrame = 0
 }
 
-function autoScale() {
-  if (!shadowRoot || !contentBox.value) return
+function syncHeight() {
+  if (resizeFrame) cancelAnimationFrame(resizeFrame)
+  resizeFrame = requestAnimationFrame(() => {
+    resizeFrame = 0
+    const doc = frame.value?.contentDocument
+    if (!doc) return
 
-  const parent = contentBox.value
-  const shadowContent = shadowRoot.querySelector('.shadow-content')
-
-  if (!shadowContent) return
-
-  const parentWidth = parent.offsetWidth
-  const childWidth = shadowContent.scrollWidth
-
-  if (childWidth === 0) return
-
-  const scale = parentWidth / childWidth
-
-  const hostElement = shadowRoot.host
-  hostElement.style.zoom = scale
+    const height = Math.max(
+      doc.documentElement?.scrollHeight || 0,
+      doc.documentElement?.offsetHeight || 0,
+      doc.body?.scrollHeight || 0,
+      doc.body?.offsetHeight || 0,
+      180
+    )
+    const nextHeight = Math.min(Math.ceil(height), 120000)
+    if (Math.abs(frameHeight.value - nextHeight) > 1) frameHeight.value = nextHeight
+  })
 }
 
-onMounted(() => {
-  shadowRoot = container.value.attachShadow({ mode: 'open' })
-  updateContent()
-  autoScale()
+function handleLoad() {
+  cleanupObserver()
+  const doc = frame.value?.contentDocument
+  if (!doc) return
+
+  doc.querySelectorAll('a[href]').forEach(link => {
+    link.setAttribute('target', '_blank')
+    link.setAttribute('rel', 'noopener noreferrer')
+  })
+
+  syncHeight()
+  resizeObserver = new ResizeObserver(syncHeight)
+  if (doc.documentElement) resizeObserver.observe(doc.documentElement)
+  if (doc.body) resizeObserver.observe(doc.body)
+  doc.querySelectorAll('img').forEach(image => {
+    if (!image.complete) image.addEventListener('load', syncHeight, { once: true })
+  })
+}
+
+watch(() => props.html, async () => {
+  cleanupObserver()
+  frameHeight.value = 180
+  await nextTick()
 })
 
-watch(() => props.html, () => {
-  updateContent()
-  autoScale()
-})
+onUnmounted(cleanupObserver)
 </script>
 
 <style scoped>
 .content-box {
   width: 100%;
-  height: 100%;
+  max-width: 100%;
   overflow: hidden;
-  font-family: -apple-system, Inter, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+  background: #fff;
 }
 
-.content-html {
+.email-frame {
+  display: block;
   width: 100%;
-  height: 100%;
+  min-height: 180px;
+  border: 0;
+  background: #fff;
 }
 </style>
