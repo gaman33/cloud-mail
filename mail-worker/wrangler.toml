@@ -49,9 +49,15 @@ crons = ["*/5 * * * *", "0 16 * * *"]	#每5分钟重试发件任务，每天刷�
 
 
 [vars]
+AWS_SES_SNS_TOPIC_ARN = "arn:aws:sns:ap-southeast-1:795782340138:cloud-mail-ses-events"
 # Configure these as encrypted Worker secrets, not plain-text vars:
 # resend_webhook_secret_polyurea = "" # turean-polyurea.com Resend account (whsec_...)
 # resend_webhook_secret_coating = ""  # turean-coating.com Resend account (whsec_...)
+# AWS_SES_ACCESS_KEY_ID = ""            # encrypted secret
+# AWS_SES_SECRET_ACCESS_KEY = ""        # encrypted secret
+# AWS_SES_REGION = "ap-southeast-1"
+# AWS_SES_CONFIGURATION_SET = "cloud-mail-marketing"
+# SES_MARKETING_ENABLED = "false"       # keep false until SES production access is approved
 #ai_model = ""			#ai模型,不填默认使用@cf/meta/llama-3.1-8b-instruct
 #analysis_cache = false			#是否开启分析数据缓存
 #orm_log = false			#是否sql日志
@@ -60,4 +66,4 @@ crons = ["*/5 * * * *", "0 16 * * *"]	#每5分钟重试发件任务，每天刷�
 #jwt_secret = ""			#jwt令牌的密钥,随便填一串字符串
 
 [build]
-command = "pnpm --prefix ../mail-vue install && pnpm --prefix ../mail-vue run build"
+command = "npm --prefix ../mail-vue run build"

@@ -453,5 +453,7 @@ const zh = {
     ,editSignature: '编辑签名'
     ,forwardedAttachment: '原邮件附件'
     ,invalidRecipientMsg: '收件人或抄送地址格式不正确'
+    ,normalDeliveryChannel: '日常邮件（Resend）'
+    ,sesMarketingChannel: '营销邮件（Amazon SES）'
 }
 export default zh

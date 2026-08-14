@@ -63,6 +63,10 @@
             <el-radio-button value="normal">{{ $t('normal') }}</el-radio-button>
             <el-radio-button value="low">{{ $t('low') }}</el-radio-button>
           </el-radio-group>
+          <el-select v-model="form.deliveryProvider" size="small" style="width: 168px" :disabled="form.sendType === 'reply' || form.sendType === 'forward'">
+            <el-option :label="$t('normalDeliveryChannel')" value="auto" />
+            <el-option v-if="settingStore.settings.sesMarketingEnabled" :label="$t('sesMarketingChannel')" value="ses" />
+          </el-select>
           <el-checkbox v-model="form.trackingEnabled">{{ $t('emailTracking') }}</el-checkbox>
           <el-checkbox v-model="form.readReceiptRequested">{{ $t('requestReadReceipt') }}</el-checkbox>
           <el-checkbox v-model="form.unsubscribeEnabled">{{ $t('includeUnsubscribe') }}</el-checkbox>
@@ -217,6 +221,7 @@ const form = reactive({
   idempotencyKey: '',
   draftId: null,
   includeSignature: false,
+  deliveryProvider: 'auto',
 })
 
 const signatureForm = reactive({accountId: 0, signatureHtml: '', signatureText: '', signatureEnabled: false, signatureOnReply: true})
@@ -554,6 +559,7 @@ function resetForm() {
   form.emailId = 0
   form.draftId = null
   form.includeSignature = false
+  form.deliveryProvider = 'auto'
   backReply.content = ''
   backReply.subject = ''
   backReply.receiveEmail = []

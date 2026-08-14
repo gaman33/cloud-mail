@@ -30,6 +30,7 @@ const resendService = {
 
 		return emailService.updateEmailStatus(c, {
 			resendEmailId: body.data.email_id,
+			provider: 'resend',
 			status,
 			message: eventMessage(body)
 		});

@@ -8,6 +8,7 @@ export const emailTracking = sqliteTable('email_tracking', {
 	recipientEmail: text('recipient_email').default('').notNull(),
 	token: text('token').notNull(),
 	providerEmailId: text('provider_email_id'),
+	provider: text('provider').default('resend').notNull(),
 	createTime: text('create_time').default(sql`CURRENT_TIMESTAMP`).notNull()
 }, table => [
 	uniqueIndex('idx_email_tracking_token').on(table.token)
