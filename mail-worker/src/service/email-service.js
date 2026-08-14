@@ -26,15 +26,35 @@ import trackingService, { buildTrackedHtml, rewriteTrackedLinks } from './tracki
 import reliabilityService from './reliability-service';
 import jwtUtils from '../utils/jwt-utils';
 import sendJobService from './send-job-service';
+import verifyUtils from '../utils/verify-utils';
 
-export function appendAccountSignature(html, text, accountRow, sendType) {
-	if (!accountRow?.signatureEnabled || (sendType === 'reply' && !accountRow.signatureOnReply)) return {html, text};
+export function appendAccountSignature(html, text, accountRow, sendType, includeSignature = null) {
+	if (includeSignature === false || !accountRow?.signatureEnabled || (sendType === 'reply' && !accountRow.signatureOnReply)) return {html, text};
 	const signatureHtml = accountRow.signatureHtml || '';
 	const signatureText = accountRow.signatureText || '';
 	return {
 		html: `${html || ''}<div data-cloud-mail-signature="true"><br>${signatureHtml}</div>`,
 		text: `${text || ''}${signatureText ? `\n\n${signatureText}` : ''}`
 	};
+}
+
+export function normalizeRecipientFields(receiveEmail = [], ccEmail = []) {
+	const seen = new Set();
+	const normalize = value => {
+		const source = Array.isArray(value) ? value : [value];
+		const result = [];
+		for (const item of source) {
+			const address = String(item || '').trim();
+			if (!address) continue;
+			if (!verifyUtils.isEmail(address)) throw new BizError(`Invalid recipient email: ${address}`);
+			const key = address.toLowerCase();
+			if (seen.has(key)) continue;
+			seen.add(key);
+			result.push(address);
+		}
+		return result;
+	};
+	return {receiveEmail: normalize(receiveEmail), ccEmail: normalize(ccEmail)};
 }
 
 const emailService = {
@@ -275,7 +295,13 @@ const emailService = {
 			,priority
 			,unsubscribeEnabled
 			,idempotencyKey
+			,ccEmail = []
+			,includeSignature
 		} = params;
+
+		({receiveEmail, ccEmail} = normalizeRecipientFields(receiveEmail, ccEmail));
+		if (receiveEmail.length === 0) throw new BizError('At least one primary recipient is required');
+		const allRecipients = [...receiveEmail, ...ccEmail];
 
 		const { resendTokens, r2Domain, send, domainList, customDomain } = await settingService.query(c);
 
@@ -288,7 +314,7 @@ const emailService = {
 		const roleRow = await roleService.selectById(c, userRow.type);
 
 		//判断接收方是不是全部为站内邮箱
-		const allInternal = receiveEmail.every(email => {
+		const allInternal = allRecipients.every(email => {
 			const domain = '@' + emailUtils.getDomain(email);
 			return domainList.includes(domain);
 		});
@@ -315,7 +341,7 @@ const emailService = {
 				if (roleRow.sendType === 'count') throw new BizError(t('totalSendLimit'), 403);
 			}
 
-			if (userRow.sendCount + receiveEmail.length > roleRow.sendCount) {
+			if (userRow.sendCount + allRecipients.length > roleRow.sendCount) {
 				if (roleRow.sendType === 'day') throw new BizError(t('daySendLack'), 403);
 				if (roleRow.sendType === 'count') throw new BizError(t('totalSendLack'), 403);
 			}
@@ -332,7 +358,7 @@ const emailService = {
 			throw new BizError(t('sendEmailNotCurUser'));
 		}
 
-		if (receiveEmail.length > 1) {
+		if (receiveEmail.length > 1 && ccEmail.length === 0) {
 			const batchKey = String(idempotencyKey || crypto.randomUUID()).slice(0, 100);
 			const results = [];
 			for (let index = 0; index < receiveEmail.length; index++) {
@@ -352,16 +378,19 @@ const emailService = {
 		const rateKey = `send-rate:${userId}:${dayjs().format('YYYY-MM-DD-HH')}`;
 		const currentRate = Number(await c.env.kv.get(rateKey) || 0);
 		const hourlyLimit = Math.max(1, Number(c.env.send_hourly_limit || 200));
-		if (currentRate >= hourlyLimit) throw new BizError(`Hourly send limit reached (${hourlyLimit})`, 429);
+		if (currentRate + allRecipients.length > hourlyLimit) throw new BizError(`Hourly send limit reached (${hourlyLimit})`, 429);
 		const recipientInternal = domainList.includes('@' + emailUtils.getDomain(recipientEmail));
-		if (!recipientInternal && await reliabilityService.isSuppressed(c, userId, recipientEmail)) {
-			throw new BizError(`Recipient is suppressed: ${recipientEmail}`, 403);
+		for (const address of allRecipients) {
+			const internal = domainList.includes('@' + emailUtils.getDomain(address));
+			if (!internal && await reliabilityService.isSuppressed(c, userId, address)) {
+				throw new BizError(`Recipient is suppressed: ${address}`, 403);
+			}
 		}
 		idempotencyKey = String(idempotencyKey || crypto.randomUUID()).slice(0, 220);
 		const existingEmail = await orm(c).select().from(email).where(and(eq(email.userId, userId), eq(email.idempotencyKey, idempotencyKey))).get();
 		if (existingEmail) return [existingEmail];
 
-		const signed = appendAccountSignature(content, text, accountRow, sendType);
+		const signed = appendAccountSignature(content, text, accountRow, sendType, includeSignature);
 		let signedHtml = signed.html;
 		text = signed.text;
 		priority = ['high', 'normal', 'low'].includes(priority) ? priority : (accountRow.defaultPriority || 'normal');
@@ -449,6 +478,7 @@ const emailService = {
 					accountEmail: accountRow.email,
 					receiveEmail,
 					subject,
+					ccEmail,
 					text,
 					html: outgoingHtml,
 					attachments: [...imageDataList, ...resolvedAttachments],
@@ -465,6 +495,7 @@ const emailService = {
 					accountEmail: accountRow.email,
 					receiveEmail,
 					subject,
+					ccEmail,
 					text,
 					html: outgoingHtml,
 					attachments: [...imageDataList, ...resolvedAttachments],
@@ -477,7 +508,7 @@ const emailService = {
 				});
 				}
 			} catch (error) {
-				if (!params._retryJob) await sendJobService.scheduleFailure(c, {...params, receiveEmail: [recipientEmail], idempotencyKey}, userId, error);
+				if (!params._retryJob) await sendJobService.scheduleFailure(c, {...params, receiveEmail, ccEmail, idempotencyKey}, userId, error);
 				throw error;
 			}
 
@@ -487,7 +518,7 @@ const emailService = {
 
 
 		if (error) {
-			if (!params._retryJob) await sendJobService.scheduleFailure(c, {...params, receiveEmail: [recipientEmail], idempotencyKey}, userId, error);
+			if (!params._retryJob) await sendJobService.scheduleFailure(c, {...params, receiveEmail, ccEmail, idempotencyKey}, userId, error);
 			throw new BizError(error.message);
 		}
 
@@ -514,6 +545,7 @@ const emailService = {
 		emailData.priority = priority;
 		emailData.idempotencyKey = idempotencyKey;
 		emailData.unsubscribeEnabled = unsubscribeEnabled ? 1 : 0;
+		emailData.cc = JSON.stringify(ccEmail.map(address => ({address, name: ''})));
 
 		const recipient = [];
 
@@ -530,7 +562,7 @@ const emailService = {
 
 		//如果权限有发送次数增加用户发送次数
 		if (roleRow.sendCount && roleRow.sendType !== 'internal') {
-			await userService.incrUserSendCount(c, receiveEmail.length, userId);
+			await userService.incrUserSendCount(c, allRecipients.length, userId);
 		}
 
 		//保存到数据库并返回结果
@@ -540,7 +572,7 @@ const emailService = {
 			const tracking = await trackingService.createTracking(c, {
 				emailId: emailResult.emailId,
 				userId,
-				recipientEmail: receiveEmail.join(', '),
+				recipientEmail: allRecipients.join(', '),
 				token: trackingToken,
 				providerEmailId: data?.id
 			});
@@ -568,27 +600,28 @@ const emailService = {
 
 		//如果全是站内接收方，直接写入数据库
 		if (allInternal) {
-			await this.HandleOnSiteEmail(c, receiveEmail, emailResult, attList);
+			await this.HandleOnSiteEmail(c, allRecipients, emailResult, attList);
 		}
 
-		await reliabilityService.recordContact(c, userId, recipientEmail, emailResult.emailId);
+		for (const address of allRecipients) await reliabilityService.recordContact(c, userId, address, emailResult.emailId);
 		await reliabilityService.audit(c, userId, 'email.send', 'email', emailResult.emailId, {
 			recipient: recipientEmail,
+			cc: ccEmail,
 			priority,
 			trackingEnabled,
 			readReceiptRequested,
 			unsubscribeEnabled
 		});
-		await c.env.kv.put(rateKey, String(currentRate + 1), {expirationTtl: 60 * 60 * 2});
+		await c.env.kv.put(rateKey, String(currentRate + allRecipients.length), {expirationTtl: 60 * 60 * 2});
 
 		const dateStr = dayjs().format('YYYY-MM-DD');
 		let daySendTotal = await c.env.kv.get(kvConst.SEND_DAY_COUNT + dateStr);
 
 		//记录每天发件次数统计
 		if (!daySendTotal) {
-			await c.env.kv.put(kvConst.SEND_DAY_COUNT + dateStr, JSON.stringify(receiveEmail.length), { expirationTtl: 60 * 60 * 24 });
+			await c.env.kv.put(kvConst.SEND_DAY_COUNT + dateStr, JSON.stringify(allRecipients.length), { expirationTtl: 60 * 60 * 24 });
 		} else  {
-			daySendTotal = Number(daySendTotal) + receiveEmail.length
+			daySendTotal = Number(daySendTotal) + allRecipients.length
 			await c.env.kv.put(kvConst.SEND_DAY_COUNT + dateStr, JSON.stringify(daySendTotal), { expirationTtl: 60 * 60 * 24 });
 		}
 
@@ -601,6 +634,7 @@ const emailService = {
 			to: [...params.receiveEmail],
 			subject: params.subject
 		};
+		if (params.ccEmail?.length) sendForm.cc = [...params.ccEmail];
 
 		if (params.text) {
 			sendForm.text = params.text;
@@ -650,6 +684,7 @@ const emailService = {
 			html: params.html,
 			attachments: await this.toResendAttachments(params.attachments)
 		};
+		if (params.ccEmail?.length) sendForm.cc = [...params.ccEmail];
 
 		const headers = {};
 		if (params.sendType === 'reply' && params.messageId) {

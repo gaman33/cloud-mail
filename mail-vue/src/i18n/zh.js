@@ -448,5 +448,10 @@ const zh = {
     ,auditAction_recipient_unsuppressed: '恢复向收件人发送'
     ,auditAction_contact_updated: '更新联系人'
     ,auditAction_send_job_retried: '手动重试发送任务'
+    ,ccRecipient: '抄送'
+    ,includeSignature: '使用签名'
+    ,editSignature: '编辑签名'
+    ,forwardedAttachment: '原邮件附件'
+    ,invalidRecipientMsg: '收件人或抄送地址格式不正确'
 }
 export default zh

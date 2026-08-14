@@ -8,6 +8,7 @@
     "remote": "vite --mode remote",
     "build": "vite build --mode release",
     "test:email-html": "node --test test/email-document.test.mjs",
+    "test:compose": "node --test test/compose-utils.test.mjs",
     "eo": "vite build --mode eo",
     "preview": "vite preview"
   },

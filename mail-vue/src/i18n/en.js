@@ -448,6 +448,11 @@ const en = {
     ,auditAction_recipient_unsuppressed: 'Restored sending to recipient'
     ,auditAction_contact_updated: 'Updated contact'
     ,auditAction_send_job_retried: 'Retried send job'
+    ,ccRecipient: 'Cc'
+    ,includeSignature: 'Use signature'
+    ,editSignature: 'Edit signature'
+    ,forwardedAttachment: 'Original attachment'
+    ,invalidRecipientMsg: 'A To or Cc address is invalid'
 }
 
 export default en
