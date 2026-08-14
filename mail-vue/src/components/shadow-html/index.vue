@@ -15,7 +15,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { buildEmailDocument } from './document.js'
 
 const props = defineProps({
@@ -30,15 +30,23 @@ const frameHeight = ref(180)
 const documentHtml = computed(() => buildEmailDocument(props.html))
 let resizeObserver = null
 let resizeFrame = 0
-let resizeTimers = []
+let readyTimer = 0
+let observedDocument = null
+let imageListeners = []
 
 function cleanupObserver() {
   resizeObserver?.disconnect()
   resizeObserver = null
+  observedDocument = null
   if (resizeFrame) cancelAnimationFrame(resizeFrame)
   resizeFrame = 0
-  resizeTimers.forEach(timer => clearTimeout(timer))
-  resizeTimers = []
+  if (readyTimer) clearTimeout(readyTimer)
+  readyTimer = 0
+  imageListeners.forEach(({ image, listener }) => {
+    image.removeEventListener('load', listener)
+    image.removeEventListener('error', listener)
+  })
+  imageListeners = []
 }
 
 function measuredHeight(doc) {
@@ -70,15 +78,33 @@ function syncHeight() {
   })
 }
 
-function scheduleHeightSync() {
-  resizeTimers.forEach(timer => clearTimeout(timer))
-  resizeTimers = [0, 100, 350, 1000, 2500].map(delay => setTimeout(syncHeight, delay))
+function observeImage(image) {
+  if (image.complete) return
+  const listener = () => syncHeight()
+  image.addEventListener('load', listener, { once: true })
+  image.addEventListener('error', listener, { once: true })
+  imageListeners.push({ image, listener })
 }
 
-function handleLoad() {
-  cleanupObserver()
+function connectDocument() {
   const doc = frame.value?.contentDocument
-  if (!doc) return
+  if (!doc?.body) {
+    if (!readyTimer) {
+      readyTimer = setTimeout(() => {
+        readyTimer = 0
+        connectDocument()
+      }, 16)
+    }
+    return
+  }
+
+  if (observedDocument === doc) {
+    syncHeight()
+    return
+  }
+
+  cleanupObserver()
+  observedDocument = doc
 
   doc.documentElement.style.overflowY = 'hidden'
   doc.body.style.overflowY = 'visible'
@@ -88,23 +114,28 @@ function handleLoad() {
     link.setAttribute('rel', 'noopener noreferrer')
   })
 
-  scheduleHeightSync()
+  syncHeight()
   resizeObserver = new ResizeObserver(syncHeight)
-  if (doc.documentElement) resizeObserver.observe(doc.documentElement)
-  if (doc.body) resizeObserver.observe(doc.body)
-  doc.body?.querySelectorAll(':scope > *').forEach(element => resizeObserver.observe(element))
-  doc.querySelectorAll('img').forEach(image => {
-    if (!image.complete) image.addEventListener('load', syncHeight, { once: true })
-  })
+  resizeObserver.observe(doc.body)
+  doc.querySelectorAll('img').forEach(observeImage)
+
+  doc.fonts?.ready.then(() => {
+    if (observedDocument === doc) syncHeight()
+  }).catch(() => {})
+}
+
+function handleLoad() {
+  connectDocument()
 }
 
 watch(() => props.html, async () => {
   cleanupObserver()
   frameHeight.value = 180
   await nextTick()
-  scheduleHeightSync()
+  connectDocument()
 })
 
+onMounted(connectDocument)
 onUnmounted(cleanupObserver)
 </script>
 
