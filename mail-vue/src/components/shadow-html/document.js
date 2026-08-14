@@ -26,15 +26,31 @@ function removeActiveContent(value) {
     .replace(/<\/?form\b[^>]*>/gi, '')
 }
 
-function normalizeOversizedDimensions(value) {
-  return String(value || '')
-    .replace(/\swidth\s*=\s*(?:"(\d{4,})(?:px)?"|'(\d{4,})(?:px)?'|(\d{4,})(?:px)?)/gi, (match, doubleQuoted, singleQuoted, unquoted) => {
+function bodyMaxWidth(rawAttributes = '') {
+  const styleMatch = rawAttributes.match(/\sstyle\s*=\s*(?:"([^"]*)"|'([^']*)')/i)
+  const style = styleMatch?.[1] ?? styleMatch?.[2] ?? ''
+  const widthMatch = style.match(/\bmax-width\s*:\s*(\d{3,4})px/i)
+  return widthMatch ? Number(widthMatch[1]) : 0
+}
+
+function normalizeMalformedShell(value, rawBodyAttributes = '') {
+  const intendedWidth = bodyMaxWidth(rawBodyAttributes)
+  if (!intendedWidth) return String(value || '')
+
+  // Meta/Facebook messages sometimes place a body constrained to 602px
+  // inside an invalid 1204px table cell. Browsers ignore the nested body tag
+  // and use the doubled cell width, which splits the message across the page.
+  // Only collapse a dimension that is exactly twice the declared body width;
+  // leave legitimate wide newsletters and banners untouched.
+  return String(value || '').replace(
+    /\swidth\s*=\s*(?:"(\d{3,4})(?:px)?"|'(\d{3,4})(?:px)?'|(\d{3,4})(?:px)?)/gi,
+    (match, doubleQuoted, singleQuoted, unquoted) => {
       const width = Number(doubleQuoted || singleQuoted || unquoted)
-      return width > 900 ? ' width="100%"' : match
-    })
-    .replace(/\b(width|min-width)\s*:\s*(\d{4,})px/gi, (match, property, rawWidth) => {
-      return Number(rawWidth) > 900 ? `${property}:100%` : match
-    })
+      return Math.abs(width - intendedWidth * 2) <= 2
+        ? ` width="${intendedWidth}"`
+        : match
+    }
+  )
 }
 
 function stripDocumentWrappers(value) {
@@ -66,7 +82,7 @@ function extractEmailParts(html) {
       const shell = source.slice(shellStart, shellEnd)
       return {
         attributes: safeBodyAttributes(bodyOpen[1]),
-        body: normalizeOversizedDimensions(removeActiveContent(stripDocumentWrappers(shell))),
+        body: normalizeMalformedShell(removeActiveContent(stripDocumentWrappers(shell)), bodyOpen[1]),
         head
       }
     }
@@ -76,7 +92,7 @@ function extractEmailParts(html) {
     const contentEnd = closingOffset >= 0 ? contentStart + closingOffset : source.length
     return {
       attributes: safeBodyAttributes(bodyOpen[1]),
-      body: normalizeOversizedDimensions(removeActiveContent(source.slice(contentStart, contentEnd))),
+      body: removeActiveContent(source.slice(contentStart, contentEnd)),
       head
     }
   }
@@ -86,7 +102,7 @@ function extractEmailParts(html) {
     .replace(/<head\b[^>]*>[\s\S]*?<\/head\s*>/gi, '')
     .replace(/<\/?html\b[^>]*>/gi, '')
 
-  return {attributes: '', body: normalizeOversizedDimensions(removeActiveContent(body)), head}
+  return {attributes: '', body: removeActiveContent(body), head}
 }
 
 export function buildEmailDocument(html) {
@@ -105,13 +121,13 @@ export function buildEmailDocument(html) {
   <base target="_blank">
   ${head}
   <style>
-    html { width: 100%; min-width: 0 !important; background: transparent; overflow-x: auto; }
-    body { box-sizing: border-box; width: auto !important; min-width: 0 !important; max-width: 100% !important; overflow-wrap: anywhere; }
-    body > table { width: 100% !important; margin-left: auto !important; margin-right: auto !important; }
-    body > table > tbody > tr > td { max-width: 100% !important; }
+    html { width: 100%; min-width: 0 !important; background: transparent; overflow-x: hidden; }
+    body { box-sizing: border-box; min-width: 0 !important; max-width: 100% !important; overflow-wrap: anywhere; }
+    body > table { margin-left: auto; margin-right: auto; }
     img { max-width: 100%; height: auto; }
-    table { max-width: 100% !important; }
+    table { max-width: 100%; }
     table, td, th, div { box-sizing: border-box; }
+    td, th { overflow-wrap: anywhere; }
     pre { max-width: 100%; white-space: pre-wrap; word-break: break-word; }
   </style>
 </head>

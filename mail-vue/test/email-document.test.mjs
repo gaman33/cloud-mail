@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { buildEmailDocument } from '../src/components/shadow-html/document.js'
 
-test('extracts a malformed nested body without the oversized outer wrapper', () => {
+test('collapses only the doubled wrapper around a malformed nested body', () => {
   const html = `<html><head><style>.message{color:#111}</style></head>
     <table width="100%"><tr><td width="1204">
     <body style="max-width:602px;margin:0 auto" dir="ltr">
@@ -14,8 +14,15 @@ test('extracts a malformed nested body without the oversized outer wrapper', () 
   assert.match(document, /WhatsApp tail content/)
   assert.match(document, /body style="max-width:602px;margin:0 auto" dir="ltr"/)
   assert.doesNotMatch(document, /width="1204"/)
-  assert.match(document, /width="100%"/)
-  assert.match(document, /table \{ max-width: 100% !important; \}/)
+  assert.match(document, /width="602"/)
+  assert.match(document, /table \{ max-width: 100%; \}/)
+  assert.doesNotMatch(document, /body > table \{ width: 100% !important/)
+})
+
+test('does not rewrite legitimate newsletter dimensions', () => {
+  const document = buildEmailDocument(`<table role="presentation" width="100%"><tr><td width="640"><table width="600"><tr><td>WorldFirst content</td></tr></table></td></tr></table>`)
+  assert.match(document, /width="640"/)
+  assert.match(document, /width="600"/)
 })
 
 test('keeps a normal body isolated from trailing document garbage', () => {
