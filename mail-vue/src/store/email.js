@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import { EmailUnreadEnum } from '@/enums/email-enum.js'
 
 export const useEmailStore = defineStore('email', {
     state: () => ({
@@ -16,6 +17,14 @@ export const useEmailStore = defineStore('email', {
         },
         sendScroll: null,
     }),
+    actions: {
+        markListRead(emailId) {
+            for (const scroll of [this.emailScroll, this.starScroll, this.sendScroll]) {
+                const item = scroll?.emailList?.find(email => email.emailId === emailId)
+                if (item) item.unread = EmailUnreadEnum.READ
+            }
+        }
+    },
     persist: {
         pick: ['contentData'],
     },

@@ -72,6 +72,7 @@
           <el-checkbox v-model="form.unsubscribeEnabled">{{ $t('includeUnsubscribe') }}</el-checkbox>
           <el-checkbox v-model="form.includeSignature" :disabled="!activeSignatureHtml">{{ $t('includeSignature') }}</el-checkbox>
           <el-button size="small" @click="openSignatureEditor">{{ $t('editSignature') }}</el-button>
+          <el-button size="small" type="success" @click="aiShow = true">{{ $t('aiDraft') }}</el-button>
           <el-dropdown @command="applyLibraryItem">
             <el-button size="small">{{ $t('templatesAndSnippets') }}</el-button>
             <template #dropdown>
@@ -107,6 +108,20 @@
         </div>
       </div>
     </div>
+    <el-dialog v-model="aiShow" :title="$t('aiDraftTitle')" append-to-body class="compose-ai-dialog">
+      <el-form label-position="top">
+        <el-form-item :label="$t('aiCompany')"><el-input v-model="aiForm.company" :placeholder="$t('aiCompanyHint')" /></el-form-item>
+        <el-form-item :label="$t('aiContactName')"><el-input v-model="aiForm.contactName" /></el-form-item>
+        <el-form-item :label="$t('aiIndustry')"><el-input v-model="aiForm.industry" /></el-form-item>
+        <el-form-item :label="$t('aiProduct')"><el-input v-model="aiForm.product" type="textarea" :rows="3" /></el-form-item>
+        <el-form-item :label="$t('aiGoal')"><el-input v-model="aiForm.goal" /></el-form-item>
+        <el-form-item :label="$t('aiLanguage')"><el-input v-model="aiForm.language" placeholder="English" /></el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="aiShow = false">{{ $t('cancel') }}</el-button>
+        <el-button type="primary" :loading="aiLoading" @click="generateAiDraft">{{ $t('aiGenerate') }}</el-button>
+      </template>
+    </el-dialog>
     <el-dialog v-model="signatureShow" :title="$t('emailSignature')" append-to-body class="compose-signature-dialog">
       <div class="signature-options">
         <el-switch v-model="signatureForm.signatureEnabled" :active-text="$t('enableSignature')" />
@@ -149,6 +164,7 @@ import {h, nextTick, onMounted, onUnmounted, reactive, ref, toRaw, computed} fro
 import {Icon} from "@iconify/vue";
 import {useUserStore} from "@/store/user.js";
 import {emailSend, attachmentUpload, attachmentCancel} from "@/request/email.js";
+import {aiDraft} from "@/request/ai.js";
 import {useAccountStore} from "@/store/account.js";
 import {useEmailStore} from "@/store/email.js";
 import {formatBytes} from "@/utils/file-utils.js";
@@ -192,6 +208,8 @@ const contactsTabRef = ref({})
 const showContacts = ref(false)
 const showCc = ref(false)
 const signatureShow = ref(false)
+const aiShow = ref(false)
+const aiLoading = ref(false)
 const signatureLoading = ref(false)
 const composeAccount = ref(null)
 const mySelect = ref()
@@ -225,6 +243,7 @@ const form = reactive({
 })
 
 const signatureForm = reactive({accountId: 0, signatureHtml: '', signatureText: '', signatureEnabled: false, signatureOnReply: true})
+const aiForm = reactive({company: '', contactName: '', industry: '', product: '', goal: '', language: 'English', tone: 'professional'})
 const activeSignatureHtml = computed(() => composeAccount.value?.signatureHtml || composeAccount.value?.signatureText || '')
 
 const selectRecipientList = ref([])
@@ -242,6 +261,25 @@ function applyLibraryItem(item) {
   form.content = item.content || ''
   form.text = item.text || ''
   defValue.value = form.content
+}
+
+async function generateAiDraft() {
+  if (aiLoading.value) return
+  aiLoading.value = true
+  try {
+    const response = await aiDraft({...toRaw(aiForm)})
+    const draft = response?.data || response
+    if (draft?.subject) form.subject = draft.subject
+    if (draft?.html || draft?.text) {
+      form.content = draft.html || draft.text
+      form.text = draft.text || ''
+      defValue.value = form.content
+    }
+    aiShow.value = false
+    ElMessage({message: t('aiDraftSuccess'), type: 'success', plain: true})
+  } catch (error) {
+    ElMessage({message: error?.message || t('aiDraftFailed'), type: 'error', plain: true})
+  } finally { aiLoading.value = false }
 }
 
 const contacts = computed(() => writerStore.sendRecipientRecord.map(item => ({email: item})))

@@ -170,16 +170,23 @@ watch(() => accountStore.currentAccountId, () => {
   handleBack()
 })
 
+let readRequesting = false
+function tryMarkRead() {
+  if (!emailStore.contentData.showUnread || readRequesting || !email?.emailId || email.unread !== EmailUnreadEnum.UNREAD) return
+  readRequesting = true
+  email.unread = EmailUnreadEnum.READ
+  emailStore.markListRead(email.emailId)
+  emailRead([email.emailId]).finally(() => { readRequesting = false })
+}
+
 onMounted(() => {
-  if (emailStore.contentData.showUnread && email.unread === EmailUnreadEnum.UNREAD) {
-    email.unread = EmailUnreadEnum.READ;
-    emailRead([email.emailId]);
-  }
+  tryMarkRead()
   if (email.type === 1) loadTracking();
 })
 
 onUnmounted(() => {
   emailStore.contentData.showUnread = false;
+  readRequesting = false
 })
 
 function openReply() {

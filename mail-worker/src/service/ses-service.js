@@ -60,6 +60,24 @@ function marketingFromAddress(accountEmail, localPart = 'marketing') {
 	return `${safeLocalPart}@news.${domain}`;
 }
 
+function sandboxRecipients(env) {
+	return String(env.SES_VERIFIED_RECIPIENTS || '').split(/[,\s]+/).map(item => item.trim().toLowerCase()).filter(Boolean);
+}
+
+async function reserveSandboxQuota(c, recipients) {
+	if (c.env.SES_SANDBOX_MODE === 'false') return;
+	const verified = sandboxRecipients(c.env);
+	if (!verified.length) throw new BizError('SES sandbox requires SES_VERIFIED_RECIPIENTS');
+	const unverified = recipients.filter(item => !verified.includes(String(item).toLowerCase()));
+	if (unverified.length) throw new BizError(`SES sandbox recipient is not verified: ${unverified.join(', ')}`, 403);
+	const limit = Math.min(200, Math.max(1, Number(c.env.SES_DAILY_RECIPIENT_LIMIT || 200)));
+	const usageDate = new Date().toISOString().slice(0, 10);
+	const count = recipients.length;
+	await c.env.db.prepare(`INSERT OR IGNORE INTO ses_daily_usage (usage_date, recipient_count) VALUES (?, 0)`).bind(usageDate).run();
+	const updated = await c.env.db.prepare(`UPDATE ses_daily_usage SET recipient_count = recipient_count + ?, update_time = CURRENT_TIMESTAMP WHERE usage_date = ? AND recipient_count + ? <= ?`).bind(count, usageDate, count, limit).run();
+	if (!updated?.meta?.changes) throw new BizError(`SES sandbox daily recipient limit reached (${limit})`, 429);
+}
+
 async function buildRawMessage(params, attachments) {
 	const mixedBoundary = `cm-mixed-${crypto.randomUUID()}`;
 	const alternativeBoundary = `cm-alt-${crypto.randomUUID()}`;
@@ -134,6 +152,8 @@ const sesService = {
 		if (!this.configured(c.env)) throw new BizError('Amazon SES marketing configuration is incomplete', 503);
 
 		const fromEmail = marketingFromAddress(params.accountEmail, c.env.AWS_SES_FROM_LOCAL_PART || 'marketing');
+		const recipients = [...(params.receiveEmail || []), ...(params.ccEmail || [])];
+		await reserveSandboxQuota(c, recipients);
 		const rfcMessageId = `<${crypto.randomUUID()}@${fromEmail.split('@')[1]}>`;
 		const attachments = await attachmentConverter(params.attachments || []);
 		const raw = await buildRawMessage({
@@ -171,5 +191,5 @@ const sesService = {
 	}
 };
 
-export { buildRawMessage, marketingFromAddress };
+export { buildRawMessage, marketingFromAddress, reserveSandboxQuota };
 export default sesService;

@@ -44,5 +44,6 @@ export default {
 		const settings = await settingService.query({env});
 		await trackingService.purgeExpired({env}, settings.trackingRetentionDays);
 		await reliabilityService.purgeExpired({env}, settings.auditRetentionDays);
+		await env.db.prepare(`DELETE FROM ses_daily_usage WHERE usage_date < date('now', '-14 day')`).run();
 	},
 };

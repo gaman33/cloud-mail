@@ -33,6 +33,7 @@ const dbInit = {
 		await this.v3_2DB(c);
 		await this.v4_0DB(c);
 		await this.v4_1DB(c);
+		await this.v4_2DB(c);
 		await settingService.refresh(c);
 		return c.text('success');
 	},
@@ -42,8 +43,22 @@ const dbInit = {
 		await this.v3_2DB(c);
 		await this.v4_0DB(c);
 		await this.v4_1DB(c);
+		await this.v4_2DB(c);
 		await settingService.refresh(c);
-		return {version: '4.1', migrated: true};
+		return {version: '4.2', migrated: true};
+	},
+
+	async v4_2DB(c) {
+		await c.env.db.batch([
+			c.env.db.prepare(`CREATE TABLE IF NOT EXISTS ses_daily_usage (usage_date TEXT PRIMARY KEY, recipient_count INTEGER NOT NULL DEFAULT 0, update_time DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL)`),
+			c.env.db.prepare(`CREATE INDEX IF NOT EXISTS idx_ses_daily_usage_update ON ses_daily_usage(update_time)`),
+			c.env.db.prepare(`CREATE INDEX IF NOT EXISTS idx_attachments_email_type ON attachments(email_id, type)`),
+			c.env.db.prepare(`CREATE INDEX IF NOT EXISTS idx_role_perm_role ON role_perm(role_id)`),
+			c.env.db.prepare(`CREATE INDEX IF NOT EXISTS idx_oauth_oauth_user_id ON oauth(oauth_user_id)`),
+			c.env.db.prepare(`CREATE INDEX IF NOT EXISTS idx_oauth_user_id ON oauth(user_id)`),
+			c.env.db.prepare(`CREATE INDEX IF NOT EXISTS idx_email_type_create_time ON email(type, create_time)`),
+			c.env.db.prepare(`CREATE INDEX IF NOT EXISTS idx_user_type ON user(type)`)
+		]);
 	},
 
 	async v4_1DB(c) {
