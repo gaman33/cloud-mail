@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildRawMessage, marketingFromAddress } from '../src/service/ses-service';
+import { buildRawMessage, marketingFromAddress, isSandboxRecipientVerified } from '../src/service/ses-service';
 import { canonicalMessage, validSnsUrl } from '../src/utils/ses-sns-utils';
 import { normalizeType, recipientAddresses } from '../src/service/ses-event-service';
 
@@ -45,5 +45,11 @@ describe('Amazon SES marketing integration', () => {
 		const payload = {eventType: 'Bounce', bounce: {bouncedRecipients: [{emailAddress: 'bad@example.com'}]}};
 		expect(normalizeType(payload.eventType)).toBe('BOUNCE');
 		expect(recipientAddresses(payload)).toEqual(['bad@example.com']);
+	});
+
+	it('accepts exact sandbox recipients and verified domains', () => {
+		expect(isSandboxRecipientVerified('info@turean-coating.com', ['info@turean-coating.com'])).toBe(true);
+		expect(isSandboxRecipientVerified('jessie@news.turean-polyurea.com', ['news.turean-polyurea.com'])).toBe(true);
+		expect(isSandboxRecipientVerified('jessie@turean-coating.com', ['news.turean-coating.com'])).toBe(false);
 	});
 });

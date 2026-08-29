@@ -61,14 +61,19 @@ function marketingFromAddress(accountEmail, localPart = 'marketing') {
 }
 
 function sandboxRecipients(env) {
-	return String(env.SES_VERIFIED_RECIPIENTS || '').split(/[,\s]+/).map(item => item.trim().toLowerCase()).filter(Boolean);
+	return String(env.SES_VERIFIED_RECIPIENTS || '').split(/[,\s]+/).map(item => item.trim().toLowerCase().replace(/^@/, '')).filter(Boolean);
+}
+
+function isSandboxRecipientVerified(address, verified) {
+	const value = String(address || '').trim().toLowerCase();
+	return verified.some(identity => identity.includes('@') ? identity === value : value.endsWith(`@${identity}`));
 }
 
 async function reserveSandboxQuota(c, recipients) {
 	if (c.env.SES_SANDBOX_MODE === 'false') return;
 	const verified = sandboxRecipients(c.env);
 	if (!verified.length) throw new BizError('SES sandbox requires SES_VERIFIED_RECIPIENTS');
-	const unverified = recipients.filter(item => !verified.includes(String(item).toLowerCase()));
+	const unverified = recipients.filter(item => !isSandboxRecipientVerified(item, verified));
 	if (unverified.length) throw new BizError(`SES sandbox recipient is not verified: ${unverified.join(', ')}`, 403);
 	const limit = Math.min(200, Math.max(1, Number(c.env.SES_DAILY_RECIPIENT_LIMIT || 200)));
 	const usageDate = new Date().toISOString().slice(0, 10);
@@ -191,5 +196,5 @@ const sesService = {
 	}
 };
 
-export { buildRawMessage, marketingFromAddress, reserveSandboxQuota };
+export { buildRawMessage, marketingFromAddress, reserveSandboxQuota, isSandboxRecipientVerified };
 export default sesService;
