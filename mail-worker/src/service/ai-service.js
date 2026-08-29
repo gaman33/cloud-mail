@@ -78,7 +78,7 @@ const aiService = {
 		const baseUrl = String(c.env.AI_PROVIDER_BASE_URL || 'https://api.zetaapi.ai/v1').replace(/\/$/, '');
 		const apiKey = String(c.env.AI_PROVIDER_API_KEY || '').trim();
 		if (!apiKey) throw new Error('AI provider API key is not configured');
-		const model = String(c.env.AI_PROVIDER_MODEL || 'gpt-4o-mini').trim();
+		const model = String(c.env.AI_PROVIDER_MODEL || 'gpt-4o').trim();
 		const limit = Math.max(1, Number(c.env.AI_REQUESTS_PER_MINUTE || 10));
 		const bucket = `ai-draft:${userId}:${dayjs().format('YYYYMMDDHHmm')}`;
 		const used = Number(await c.env.kv.get(bucket) || 0);
