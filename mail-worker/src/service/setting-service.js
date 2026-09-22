@@ -9,6 +9,7 @@ import BizError from '../error/biz-error';
 import {t} from '../i18n/i18n'
 import verifyRecordService from './verify-record-service';
 import userContext from '../security/user-context';
+import { encryptSecret } from '../utils/secret-crypto';
 
 const NEUTRAL_COMPLIANCE_NOTICE = '请遵守当地法律法规，违规使用责任由使用者自行承担';
 
@@ -105,6 +106,8 @@ const settingService = {
 		settingRow.s3AccessKey = settingRow.s3AccessKey ? `${settingRow.s3AccessKey.slice(0, 12)}******` : null;
 		settingRow.s3SecretKey = settingRow.s3SecretKey ? `${settingRow.s3SecretKey.slice(0, 12)}******` : null;
 		settingRow.tgBotToken = settingRow.tgBotToken ? `${settingRow.tgBotToken.slice(0, 20)}******` : null;
+		settingRow.deepseekApiKeyConfigured = !!settingRow.deepseekApiKey;
+		delete settingRow.deepseekApiKey;
 		settingRow.hasR2 = !!c.env.r2
 		settingRow.hasCfEmail = !!c.env.email
 
@@ -130,6 +133,9 @@ const settingService = {
 
 	async set(c, params) {
 		const settingData = await this.query(c);
+		if (Object.prototype.hasOwnProperty.call(params, 'deepseekApiKey')) {
+			params.deepseekApiKey = await encryptSecret(c.env.jwt_secret, params.deepseekApiKey);
+		}
 		let resendTokens = { ...settingData.resendTokens, ...params.resendTokens };
 		Object.keys(resendTokens).forEach(domain => {
 			if (!resendTokens[domain]) delete resendTokens[domain];
@@ -236,7 +242,7 @@ const settingService = {
 			linuxdoCallbackUrl: settingRow.linuxdoCallbackUrl,
 			linuxdoSwitch: settingRow.linuxdoSwitch,
 			minEmailPrefix: settingRow.minEmailPrefix
-			,sesMarketingEnabled: c.env.SES_MARKETING_ENABLED === 'true'
+			,elasticEmailEnabled: c.env.ELASTIC_EMAIL_ENABLED === 'true' && !!c.env.ELASTIC_EMAIL_API_KEY
 		};
 	},
 

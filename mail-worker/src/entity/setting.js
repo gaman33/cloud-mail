@@ -51,7 +51,10 @@ export const setting = sqliteTable('setting', {
 	blackContent: text('black_content').default('').notNull(),
 	blackFrom: text('black_from').default('').notNull(),
 	aiCode: integer('ai_code').default(1).notNull(),
-	aiCodeFilter: text('ai_code_filter').default('').notNull()
+	aiCodeFilter: text('ai_code_filter').default('').notNull(),
+	deepseekApiKey: text('deepseek_api_key').default('').notNull(),
+	deepseekModel: text('deepseek_model').default('deepseek-flash').notNull(),
+	deepseekEnabled: integer('deepseek_enabled').default(1).notNull()
 	,trackingRetentionDays: integer('tracking_retention_days').default(90).notNull()
 	,auditRetentionDays: integer('audit_retention_days').default(180).notNull()
 });

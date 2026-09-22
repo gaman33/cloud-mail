@@ -49,11 +49,11 @@ export function parseReadReceipt(raw, parsedEmail = {}) {
 
 function eventClientData(c, data = {}) {
 	const click = data.click || {};
-	const userAgent = click.userAgent || c.req.header('user-agent') || '';
+	const userAgent = click.userAgent || c.req?.header?.('user-agent') || '';
 	const parsed = reqUtils.parseUserAgent(userAgent);
-	const cf = c.req.raw.cf || {};
+	const cf = c.req?.raw?.cf || {};
 	return {
-		ip: click.ipAddress || reqUtils.getIp(c),
+		ip: click.ipAddress || (c.req ? reqUtils.getIp(c) : ''),
 		country: cf.country || '',
 		region: cf.region || '',
 		city: cf.city || '',

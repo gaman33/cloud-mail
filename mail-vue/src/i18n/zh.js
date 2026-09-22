@@ -336,6 +336,14 @@ const zh = {
     ,opened: '检测到打开'
     ,clicked: '点击了链接'
     ,suppressed: '被发送服务拦截'
+    ,deepseekAi: 'DeepSeek AI'
+    ,deepseekStatus: '状态'
+    ,deepseekModel: '模型'
+    ,deepseekApiKey: 'API Key'
+    ,deepseekKeyKeep: '已配置，留空保持不变'
+    ,configured: '已配置'
+    ,notConfigured: '未配置'
+    ,unsubscribed: '客户已退订'
     ,loading: '加载中...'
     ,noTrackingEvents: '暂时没有追踪事件'
     ,trackingNotAvailable: '这封邮件没有可用的追踪信息'
@@ -466,6 +474,6 @@ const zh = {
     ,forwardedAttachment: '原邮件附件'
     ,invalidRecipientMsg: '收件人或抄送地址格式不正确'
     ,normalDeliveryChannel: '日常邮件（Resend）'
-    ,sesMarketingChannel: '营销邮件（Amazon SES）'
+    ,elasticEmailMarketingChannel: '营销邮件（Elastic Email）'
 }
 export default zh

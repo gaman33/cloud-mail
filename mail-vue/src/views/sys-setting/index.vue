@@ -385,6 +385,29 @@
             </div>
           </div>
 
+          <div class="settings-card">
+            <div class="card-title">{{ $t('deepseekAi') }}</div>
+            <div class="card-content">
+              <div class="setting-item">
+                <div><span>{{ $t('deepseekStatus') }}</span></div>
+                <div class="forward">
+                  <span>{{ setting.deepseekEnabled === 0 && setting.deepseekApiKeyConfigured ? $t('enabled') : $t('disabled') }}</span>
+                  <el-button class="opt-button" size="small" type="primary" @click="openDeepseekSetting">
+                    <Icon icon="fluent:settings-48-regular" width="18" height="18"/>
+                  </el-button>
+                </div>
+              </div>
+              <div class="setting-item">
+                <div><span>{{ $t('deepseekModel') }}</span></div>
+                <div><span>{{ setting.deepseekModel || 'deepseek-flash' }}</span></div>
+              </div>
+              <div class="setting-item">
+                <div><span>{{ $t('deepseekApiKey') }}</span></div>
+                <div><span>{{ setting.deepseekApiKeyConfigured ? $t('configured') : $t('notConfigured') }}</span></div>
+              </div>
+            </div>
+          </div>
+
         </div>
       </div>
 
@@ -422,6 +445,15 @@
           <el-input type="text" placeholder="Site Key" v-model="turnstileForm.siteKey"/>
           <el-input type="text" style="margin-top: 15px" placeholder="Secret Key" v-model="turnstileForm.secretKey"/>
           <el-button type="primary" :loading="settingLoading" @click="saveTurnstileKey">{{ $t('save') }}</el-button>
+        </form>
+      </el-dialog>
+      <el-dialog v-model="deepseekShow" :title="$t('deepseekAi')" width="380"
+                 @closed="deepseekForm.apiKey = ''">
+        <form>
+          <el-input type="password" show-password :placeholder="setting.deepseekApiKeyConfigured ? $t('deepseekKeyKeep') : $t('deepseekApiKey')" v-model="deepseekForm.apiKey"/>
+          <el-input style="margin-top: 15px" :placeholder="$t('deepseekModel')" v-model="deepseekForm.model"/>
+          <el-switch style="margin-top: 15px" v-model="deepseekForm.enabled" :active-value="0" :inactive-value="1" :active-text="$t('enable')" :inactive-text="$t('disable')"/>
+          <el-button style="margin-top: 15px" type="primary" :loading="settingLoading" @click="saveDeepseekSetting">{{ $t('save') }}</el-button>
         </form>
       </el-dialog>
       <el-dialog
@@ -786,6 +818,7 @@ const blackFormShow = ref(false)
 const aiCodeFilterShow = ref(false)
 const r2DomainShow = ref(false)
 const turnstileShow = ref(false)
+const deepseekShow = ref(false)
 const tgSettingShow = ref(false)
 const noticePopupShow = ref(false)
 const thirdEmailShow = ref(false)
@@ -819,6 +852,8 @@ const turnstileForm = reactive({
   siteKey: '',
   secretKey: ''
 })
+
+const deepseekForm = reactive({apiKey: '', model: 'deepseek-flash', enabled: 1})
 
 const s3 = reactive({
   bucket: '',
@@ -1335,6 +1370,23 @@ function openBlackListForm() {
 
 function openAiCodeFilter() {
   aiCodeFilterShow.value = true
+}
+
+function openDeepseekSetting() {
+  deepseekForm.apiKey = ''
+  deepseekForm.model = setting.value.deepseekModel || 'deepseek-flash'
+  deepseekForm.enabled = setting.value.deepseekEnabled ?? 1
+  deepseekShow.value = true
+}
+
+function saveDeepseekSetting() {
+  const payload = {
+    deepseekModel: String(deepseekForm.model || 'deepseek-flash').trim().slice(0, 80),
+    deepseekEnabled: deepseekForm.enabled
+  }
+  if (deepseekForm.apiKey.trim()) payload.deepseekApiKey = deepseekForm.apiKey.trim()
+  editSetting(payload)
+  deepseekShow.value = false
 }
 
 function saveResendToken() {

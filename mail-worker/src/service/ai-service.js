@@ -1,6 +1,8 @@
 import emailUtils from '../utils/email-utils';
 import { settingConst } from '../const/entity-const';
 import dayjs from 'dayjs';
+import settingService from './setting-service';
+import { decryptSecret } from '../utils/secret-crypto';
 
 function parseJsonObject(value) {
 	if (value && typeof value === 'object') return value;
@@ -75,10 +77,12 @@ const aiService = {
 	},
 
 	async draft(c, params = {}, userId) {
-		const baseUrl = String(c.env.AI_PROVIDER_BASE_URL || 'https://api.zetaapi.ai/v1').replace(/\/$/, '');
-		const apiKey = String(c.env.AI_PROVIDER_API_KEY || '').trim();
-		if (!apiKey) throw new Error('AI provider API key is not configured');
-		const model = String(c.env.AI_PROVIDER_MODEL || 'gpt-4o').trim();
+		const settingData = await settingService.query(c);
+		const apiKey = await decryptSecret(c.env.jwt_secret, settingData.deepseekApiKey);
+		if (settingData.deepseekEnabled !== 0) throw new Error('DeepSeek is not enabled');
+		if (!apiKey) throw new Error('DeepSeek API key is not configured');
+		const baseUrl = 'https://api.deepseek.com';
+		const model = String(settingData.deepseekModel || 'deepseek-flash').trim();
 		const limit = Math.max(1, Number(c.env.AI_REQUESTS_PER_MINUTE || 10));
 		const bucket = `ai-draft:${userId}:${dayjs().format('YYYYMMDDHHmm')}`;
 		const used = Number(await c.env.kv.get(bucket) || 0);
@@ -96,7 +100,7 @@ const aiService = {
 		};
 		if (!fields.company && !fields.contactName && !fields.product) throw new Error('Company, contact name or product is required');
 		const controller = new AbortController();
-		const timeout = setTimeout(() => controller.abort(), Math.min(60000, Math.max(5000, Number(c.env.AI_PROVIDER_TIMEOUT_MS || 30000))));
+		const timeout = setTimeout(() => controller.abort(), Math.min(60000, Math.max(5000, Number(c.env.DEEPSEEK_TIMEOUT_MS || 30000))));
 		try {
 			const response = await fetch(`${baseUrl}/chat/completions`, {
 				method: 'POST',
@@ -107,7 +111,7 @@ const aiService = {
 				]}),
 				signal: controller.signal
 			});
-			if (!response.ok) throw new Error(`AI provider returned HTTP ${response.status}`);
+				if (!response.ok) throw new Error(`DeepSeek returned HTTP ${response.status}`);
 			const payload = await response.json();
 			const content = payload?.choices?.[0]?.message?.content;
 			const draft = parseJsonObject(content);

@@ -65,7 +65,7 @@
           </el-radio-group>
           <el-select v-model="form.deliveryProvider" size="small" style="width: 168px" :disabled="form.sendType === 'reply' || form.sendType === 'forward'">
             <el-option :label="$t('normalDeliveryChannel')" value="auto" />
-            <el-option v-if="settingStore.settings.sesMarketingEnabled" :label="$t('sesMarketingChannel')" value="ses" />
+            <el-option v-if="settingStore.settings.elasticEmailEnabled" :label="$t('elasticEmailMarketingChannel')" value="elastic_email" />
           </el-select>
           <el-checkbox v-model="form.trackingEnabled">{{ $t('emailTracking') }}</el-checkbox>
           <el-checkbox v-model="form.readReceiptRequested">{{ $t('requestReadReceipt') }}</el-checkbox>
@@ -711,6 +711,7 @@ function open() {
 
 function openDraft(draft) {
   Object.assign(form, {...draft})
+  if (form.deliveryProvider === 'ses') form.deliveryProvider = 'elastic_email'
   form.ccEmail = Array.isArray(draft.ccEmail) ? draft.ccEmail : []
   showCc.value = form.ccEmail.length > 0
   composeAccount.value = accountStore.currentAccount.email ? accountStore.currentAccount : userStore.user.account

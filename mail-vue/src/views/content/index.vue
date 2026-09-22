@@ -235,7 +235,7 @@ function loadTracking() {
 }
 
 function trackingEventLabel(type) {
-  return ({sent: t('sent'), delivered: t('delivered'), opened: t('opened'), clicked: t('clicked'), read_receipt: t('read_receipt'), bounced: t('bounced'), complained: t('complained'), delivery_delayed: t('delayed'), failed: t('sendFailMsg'), suppressed: t('suppressed')})[type] || type
+  return ({sent: t('sent'), delivered: t('delivered'), opened: t('opened'), clicked: t('clicked'), read_receipt: t('read_receipt'), bounced: t('bounced'), complained: t('complained'), delivery_delayed: t('delayed'), failed: t('sendFailMsg'), suppressed: t('suppressed'), unsubscribed: t('unsubscribed')})[type] || type
 }
 
 function hasTrackingEvent(type) {

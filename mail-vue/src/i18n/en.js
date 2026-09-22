@@ -336,6 +336,14 @@ const en = {
     opened: 'Opened',
     clicked: 'Link clicked',
     suppressed: 'Suppressed',
+    deepseekAi: 'DeepSeek AI',
+    deepseekStatus: 'Status',
+    deepseekModel: 'Model',
+    deepseekApiKey: 'API Key',
+    deepseekKeyKeep: 'Configured, leave blank to keep it',
+    configured: 'Configured',
+    notConfigured: 'Not configured',
+    unsubscribed: 'Unsubscribed',
     loading: 'Loading...',
     noTrackingEvents: 'No tracking events yet',
     trackingNotAvailable: 'Tracking is not available for this message',
@@ -466,7 +474,7 @@ const en = {
     ,forwardedAttachment: 'Original attachment'
     ,invalidRecipientMsg: 'A To or Cc address is invalid'
     ,normalDeliveryChannel: 'Daily mail (Resend)'
-    ,sesMarketingChannel: 'Marketing (Amazon SES)'
+    ,elasticEmailMarketingChannel: 'Marketing (Elastic Email)'
 }
 
 export default en

@@ -237,6 +237,17 @@ const attService = {
 		return { imageDataList, html: document.toString() };
 	},
 
+	async publishInlineImages(c, imageDataList = []) {
+		for (const image of imageDataList) {
+			if (!image.buff) continue;
+			await r2Service.putObj(c, image.key, image.buff, {
+				contentType: image.mimeType || image.contentType || 'application/octet-stream',
+				cacheControl: 'max-age=259200',
+				contentDisposition: `inline;filename=${encodeURIComponent(image.filename || 'image')}`
+			});
+		}
+	},
+
 	async saveSendAtt(c, attList, userId, accountId, emailId, consumeUploads = true) {
 
 		const attDataList = [];
