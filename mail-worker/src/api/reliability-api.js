@@ -23,7 +23,7 @@ app.get('/reliability/deliverability/:domain', async c => {
 		} catch { return null; }
 	};
 	const [txt, dmarc] = await Promise.all([resolve(domain, 'TXT'), resolve(`_dmarc.${domain}`, 'TXT')]);
-	return c.json(result.ok({domain, available: true, spf: JSON.stringify(txt || '').includes('v=spf1'), dmarc: JSON.stringify(dmarc || '').includes('v=DMARC1'), dkim: 'Provider-specific selector; verify it in Resend or Cloudflare Email settings.'}));
+	return c.json(result.ok({domain, available: true, spf: JSON.stringify(txt || '').includes('v=spf1'), dmarc: JSON.stringify(dmarc || '').includes('v=DMARC1'), dkim: 'Provider-specific selector; verify it in Resend, Elastic Email, or Cloudflare Email settings.'}));
 });
 app.get('/unsubscribe/:token', async c => {
 	const payload = await jwtUtils.verifyToken(c, c.req.param('token'));

@@ -336,6 +336,14 @@ const en = {
     opened: 'Opened',
     clicked: 'Link clicked',
     suppressed: 'Suppressed',
+    deepseekAi: 'DeepSeek AI',
+    deepseekStatus: 'Status',
+    deepseekModel: 'Model',
+    deepseekApiKey: 'API Key',
+    deepseekKeyKeep: 'Configured, leave blank to keep it',
+    configured: 'Configured',
+    notConfigured: 'Not configured',
+    unsubscribed: 'Unsubscribed',
     loading: 'Loading...',
     noTrackingEvents: 'No tracking events yet',
     trackingNotAvailable: 'Tracking is not available for this message',
@@ -450,11 +458,23 @@ const en = {
     ,auditAction_send_job_retried: 'Retried send job'
     ,ccRecipient: 'Cc'
     ,includeSignature: 'Use signature'
+    ,aiDraft: 'AI sales email'
+    ,aiDraftTitle: 'AI sales email assistant (review before sending)'
+    ,aiCompany: 'Customer company'
+    ,aiCompanyHint: 'e.g. ABC Co., Ltd.'
+    ,aiContactName: 'Contact name'
+    ,aiIndustry: 'Customer industry'
+    ,aiProduct: 'Your product or service'
+    ,aiGoal: 'Goal of this email'
+    ,aiLanguage: 'Email language'
+    ,aiGenerate: 'Generate draft'
+    ,aiDraftSuccess: 'Draft generated. Review facts and recipients before sending.'
+    ,aiDraftFailed: 'AI draft generation failed'
     ,editSignature: 'Edit signature'
     ,forwardedAttachment: 'Original attachment'
     ,invalidRecipientMsg: 'A To or Cc address is invalid'
     ,normalDeliveryChannel: 'Daily mail (Resend)'
-    ,sesMarketingChannel: 'Marketing (Amazon SES)'
+    ,elasticEmailMarketingChannel: 'Marketing (Elastic Email)'
 }
 
 export default en

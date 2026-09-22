@@ -1,5 +1,29 @@
 import emailUtils from '../utils/email-utils';
 import { settingConst } from '../const/entity-const';
+import dayjs from 'dayjs';
+import settingService from './setting-service';
+import { decryptSecret } from '../utils/secret-crypto';
+
+function parseJsonObject(value) {
+	if (value && typeof value === 'object') return value;
+	const text = String(value || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
+	try { return JSON.parse(text); } catch {}
+	const match = text.match(/\{[\s\S]*\}/);
+	if (!match) return null;
+	try { return JSON.parse(match[0]); } catch { return null; }
+}
+
+function sanitizeHtml(value) {
+	return String(value || '')
+		.replace(/<script[\s\S]*?<\/script>/gi, '')
+		.replace(/<style[\s\S]*?<\/style>/gi, '')
+		.replace(/\son\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+		.replace(/(?:href|src)\s*=\s*(['"])\s*javascript:[^'\"]*\1/gi, '$1#$1');
+}
+
+function textToHtml(value) {
+	return String(value || '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char])).replace(/\r?\n/g, '<br>');
+}
 
 const aiService = {
 	async extractCode(c, email, options = {}) {
@@ -35,7 +59,8 @@ const aiService = {
 			});
 
 			const content = typeof result === 'string' ? result : result?.response || '';
-			const json = JSON.parse(content);
+			const json = parseJsonObject(content);
+			if (!json) return '';
 			if (typeof json.code !== 'string') {
 				return '';
 			}
@@ -49,6 +74,52 @@ const aiService = {
 			console.error('验证码提取失败: ', e);
 			return '';
 		}
+	},
+
+	async draft(c, params = {}, userId) {
+		const settingData = await settingService.query(c);
+		const apiKey = await decryptSecret(c.env.jwt_secret, settingData.deepseekApiKey);
+		if (settingData.deepseekEnabled !== 0) throw new Error('DeepSeek is not enabled');
+		if (!apiKey) throw new Error('DeepSeek API key is not configured');
+		const baseUrl = 'https://api.deepseek.com';
+		const model = String(settingData.deepseekModel || 'deepseek-flash').trim();
+		const limit = Math.max(1, Number(c.env.AI_REQUESTS_PER_MINUTE || 10));
+		const bucket = `ai-draft:${userId}:${dayjs().format('YYYYMMDDHHmm')}`;
+		const used = Number(await c.env.kv.get(bucket) || 0);
+		if (used >= limit) throw new Error(`AI request limit reached (${limit}/minute)`);
+		await c.env.kv.put(bucket, String(used + 1), {expirationTtl: 120});
+
+		const fields = {
+			company: String(params.company || '').slice(0, 300),
+			contactName: String(params.contactName || '').slice(0, 120),
+			industry: String(params.industry || '').slice(0, 160),
+			product: String(params.product || '').slice(0, 500),
+			language: String(params.language || 'English').slice(0, 40),
+			tone: String(params.tone || 'professional').slice(0, 80),
+			goal: String(params.goal || '').slice(0, 300)
+		};
+		if (!fields.company && !fields.contactName && !fields.product) throw new Error('Company, contact name or product is required');
+		const controller = new AbortController();
+		const timeout = setTimeout(() => controller.abort(), Math.min(60000, Math.max(5000, Number(c.env.DEEPSEEK_TIMEOUT_MS || 30000))));
+		try {
+			const response = await fetch(`${baseUrl}/chat/completions`, {
+				method: 'POST',
+				headers: {Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json'},
+				body: JSON.stringify({model, temperature: 0.4, max_tokens: 1200, messages: [
+					{role: 'system', content: 'You write compliant B2B sales outreach emails. Use only the supplied facts; never invent certifications, pricing, partnerships, or claims. Return JSON only with keys subject, text, html. Keep it concise and include a clear, low-pressure call to action.'},
+					{role: 'user', content: JSON.stringify(fields)}
+				]}),
+				signal: controller.signal
+			});
+				if (!response.ok) throw new Error(`DeepSeek returned HTTP ${response.status}`);
+			const payload = await response.json();
+			const content = payload?.choices?.[0]?.message?.content;
+			const draft = parseJsonObject(content);
+			if (!draft || !draft.subject || (!draft.text && !draft.html)) throw new Error('AI provider returned an invalid draft');
+			const text = String(draft.text || '').slice(0, 12000);
+			const html = sanitizeHtml(String(draft.html || textToHtml(text)).slice(0, 20000));
+			return {subject: String(draft.subject).slice(0, 300), text, html, model};
+		} finally { clearTimeout(timeout); }
 	},
 
 	shouldExtractCode(aiCode, aiCodeFilterStr, email) {

@@ -25,6 +25,7 @@ const exclude = [
 
 const requirePerms = [
 	'/email/send',
+	'/ai/draft',
 	'/attachment/upload',
 	'/account/setSignature',
 	'/admin/migrate',
@@ -69,7 +70,7 @@ const requirePerms = [
 
 const premKey = {
 	'email:delete': ['/email/delete'],
-	'email:send': ['/email/send', '/attachment/upload', '/account/setSignature', '/account/setSendPreferences'],
+	'email:send': ['/email/send', '/ai/draft', '/attachment/upload', '/account/setSignature', '/account/setSendPreferences'],
 	'account:add': ['/account/add'],
 	'account:query': ['/account/list'],
 	'account:delete': ['/account/delete'],

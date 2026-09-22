@@ -33,6 +33,9 @@ const dbInit = {
 		await this.v3_2DB(c);
 		await this.v4_0DB(c);
 		await this.v4_1DB(c);
+		await this.v4_2DB(c);
+		await this.v4_3DB(c);
+		await this.v4_4DB(c);
 		await settingService.refresh(c);
 		return c.text('success');
 	},
@@ -42,8 +45,40 @@ const dbInit = {
 		await this.v3_2DB(c);
 		await this.v4_0DB(c);
 		await this.v4_1DB(c);
+		await this.v4_2DB(c);
+		await this.v4_3DB(c);
+		await this.v4_4DB(c);
 		await settingService.refresh(c);
-		return {version: '4.1', migrated: true};
+		return {version: '4.4', migrated: true};
+	},
+
+	async v4_4DB(c) {
+		const columns = [
+			`ALTER TABLE setting ADD COLUMN deepseek_api_key TEXT NOT NULL DEFAULT '';`,
+			`ALTER TABLE setting ADD COLUMN deepseek_model TEXT NOT NULL DEFAULT 'deepseek-flash';`,
+			`ALTER TABLE setting ADD COLUMN deepseek_enabled INTEGER NOT NULL DEFAULT 1;`
+		];
+		for (const statement of columns) {
+			try { await c.env.db.prepare(statement).run(); } catch (error) { console.warn(`Skip existing v4.4 column: ${error.message}`); }
+		}
+	},
+
+	async v4_3DB(c) {
+		await c.env.db.batch([
+			c.env.db.prepare(`CREATE TABLE IF NOT EXISTS provider_daily_usage (provider TEXT NOT NULL, usage_date TEXT NOT NULL, recipient_count INTEGER NOT NULL DEFAULT 0, update_time DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, PRIMARY KEY (provider, usage_date))`),
+			c.env.db.prepare(`CREATE INDEX IF NOT EXISTS idx_provider_daily_usage_update ON provider_daily_usage(update_time)`)
+		]);
+	},
+
+	async v4_2DB(c) {
+		await c.env.db.batch([
+			c.env.db.prepare(`CREATE INDEX IF NOT EXISTS idx_attachments_email_type ON attachments(email_id, type)`),
+			c.env.db.prepare(`CREATE INDEX IF NOT EXISTS idx_role_perm_role ON role_perm(role_id)`),
+			c.env.db.prepare(`CREATE INDEX IF NOT EXISTS idx_oauth_oauth_user_id ON oauth(oauth_user_id)`),
+			c.env.db.prepare(`CREATE INDEX IF NOT EXISTS idx_oauth_user_id ON oauth(user_id)`),
+			c.env.db.prepare(`CREATE INDEX IF NOT EXISTS idx_email_type_create_time ON email(type, create_time)`),
+			c.env.db.prepare(`CREATE INDEX IF NOT EXISTS idx_user_type ON user(type)`)
+		]);
 	},
 
 	async v4_1DB(c) {

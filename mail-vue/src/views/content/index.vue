@@ -170,16 +170,23 @@ watch(() => accountStore.currentAccountId, () => {
   handleBack()
 })
 
+let readRequesting = false
+function tryMarkRead() {
+  if (!emailStore.contentData.showUnread || readRequesting || !email?.emailId || email.unread !== EmailUnreadEnum.UNREAD) return
+  readRequesting = true
+  email.unread = EmailUnreadEnum.READ
+  emailStore.markListRead(email.emailId)
+  emailRead([email.emailId]).finally(() => { readRequesting = false })
+}
+
 onMounted(() => {
-  if (emailStore.contentData.showUnread && email.unread === EmailUnreadEnum.UNREAD) {
-    email.unread = EmailUnreadEnum.READ;
-    emailRead([email.emailId]);
-  }
+  tryMarkRead()
   if (email.type === 1) loadTracking();
 })
 
 onUnmounted(() => {
   emailStore.contentData.showUnread = false;
+  readRequesting = false
 })
 
 function openReply() {
@@ -228,7 +235,7 @@ function loadTracking() {
 }
 
 function trackingEventLabel(type) {
-  return ({sent: t('sent'), delivered: t('delivered'), opened: t('opened'), clicked: t('clicked'), read_receipt: t('read_receipt'), bounced: t('bounced'), complained: t('complained'), delivery_delayed: t('delayed'), failed: t('sendFailMsg'), suppressed: t('suppressed')})[type] || type
+  return ({sent: t('sent'), delivered: t('delivered'), opened: t('opened'), clicked: t('clicked'), read_receipt: t('read_receipt'), bounced: t('bounced'), complained: t('complained'), delivery_delayed: t('delayed'), failed: t('sendFailMsg'), suppressed: t('suppressed'), unsubscribed: t('unsubscribed')})[type] || type
 }
 
 function hasTrackingEvent(type) {

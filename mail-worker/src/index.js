@@ -10,6 +10,7 @@ import sendJobService from './service/send-job-service';
 import trackingService from './service/tracking-service';
 import reliabilityService from './service/reliability-service';
 import settingService from './service/setting-service';
+import elasticEmailEventService from './service/elastic-email-event-service';
 export default {
 	 async fetch(req, env, ctx) {
 
@@ -30,6 +31,11 @@ export default {
 	email: email,
 	async scheduled(c, env, ctx) {
 		await sendJobService.process({env}, emailService);
+		try {
+			await elasticEmailEventService.sync({env});
+		} catch (error) {
+			console.error('Elastic Email event sync failed', error);
+		}
 		if (c.cron === '*/5 * * * *') return;
 		if (c.cron === '*/30 * * * *') {
 			await analysisService.refreshEchartsCache({ env })
@@ -44,5 +50,6 @@ export default {
 		const settings = await settingService.query({env});
 		await trackingService.purgeExpired({env}, settings.trackingRetentionDays);
 		await reliabilityService.purgeExpired({env}, settings.auditRetentionDays);
+		await env.db.prepare(`DELETE FROM provider_daily_usage WHERE usage_date < date('now', '-14 day')`).run();
 	},
 };

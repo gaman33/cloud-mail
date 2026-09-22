@@ -27,7 +27,7 @@ import reliabilityService from './reliability-service';
 import jwtUtils from '../utils/jwt-utils';
 import sendJobService from './send-job-service';
 import verifyUtils from '../utils/verify-utils';
-import sesService from './ses-service';
+import elasticEmailService from './elastic-email-service';
 
 export function appendAccountSignature(html, text, accountRow, sendType, includeSignature = null) {
 	if (includeSignature === false || !accountRow?.signatureEnabled || (sendType === 'reply' && !accountRow.signatureOnReply)) return {html, text};
@@ -399,8 +399,7 @@ const emailService = {
 		trackingEnabled = trackingEnabled == null ? !!accountRow.defaultTracking : !!trackingEnabled;
 		readReceiptRequested = readReceiptRequested == null ? !!accountRow.defaultReadReceipt : !!readReceiptRequested;
 		unsubscribeEnabled = unsubscribeEnabled == null ? !!accountRow.defaultUnsubscribe : !!unsubscribeEnabled;
-		if (deliveryProvider === 'ses') {
-			if (ccEmail.length) throw new BizError('Amazon SES marketing sends do not support Cc; send one tracked message per customer');
+		if (deliveryProvider === 'elastic_email') {
 			trackingEnabled = true;
 			unsubscribeEnabled = true;
 		}
@@ -436,13 +435,13 @@ const emailService = {
 		const domain = emailUtils.getDomain(accountRow.email);
 		const resendToken = resendTokens[domain];
 		const useCloudflareEmail = !!c.env.email;
-		const useSes = deliveryProvider === 'ses';
-		if (!['auto', 'ses'].includes(deliveryProvider)) throw new BizError('Unsupported email delivery provider');
-		if (useSes && allInternal) throw new BizError('Amazon SES marketing is only available for external recipients');
-		const provider = useSes ? 'ses' : (useCloudflareEmail ? 'cloudflare' : (allInternal ? 'cloud_mail' : 'resend'));
+		const useElasticEmail = deliveryProvider === 'elastic_email';
+		if (!['auto', 'elastic_email'].includes(deliveryProvider)) throw new BizError('Unsupported email delivery provider');
+		if (useElasticEmail && allInternal) throw new BizError('Elastic Email marketing is only available for external recipients');
+		const provider = useElasticEmail ? 'elastic_email' : (useCloudflareEmail ? 'cloudflare' : (allInternal ? 'cloud_mail' : 'resend'));
 
 		//如果接收方存在站外邮箱，又没有发信服务
-		if (!useSes && !useCloudflareEmail && !resendToken && !allInternal) {
+		if (!useElasticEmail && !useCloudflareEmail && !resendToken && !allInternal) {
 			throw new BizError(t('noSendProvider'));
 		}
 
@@ -472,19 +471,23 @@ const emailService = {
 		const trackingToken = allInternal || !trackingEnabled
 			? null
 			: await trackingService.idempotentToken(c, idempotencyKey);
-		const outgoingHtml = trackingToken
+		let outgoingHtml = trackingToken
 			? buildTrackedHtml(
 				rewriteTrackedLinks(html, `${trackingService.trackingOrigin(c, customDomain)}/api/track/click`, trackingToken),
 				trackingService.openUrl(c, customDomain, trackingToken)
 			)
 			: html;
+		if (useElasticEmail && imageDataList.length) {
+			await attService.publishInlineImages(c, imageDataList);
+			outgoingHtml = this.inlineImagesToPublicUrls(outgoingHtml, imageDataList, r2Domain);
+		}
 
 		//存在站外邮箱时，如果配置了 Cloudflare Email Service 就优先使用，否则使用 Resend
 		if (!allInternal) {
 
 			try {
-				if (useSes) {
-					sendResult = await sesService.send(c, {
+				if (useElasticEmail) {
+					sendResult = await elasticEmailService.send(c, {
 						name,
 						accountEmail: accountRow.email,
 						receiveEmail,
@@ -492,13 +495,14 @@ const emailService = {
 						ccEmail,
 						text,
 						html: outgoingHtml,
-						attachments: [...imageDataList, ...resolvedAttachments],
+						attachments: resolvedAttachments,
 						sendType,
 						messageId: emailRow.messageId,
 						readReceiptRequested,
 						priorityHeaders: this.priorityHeaders(priority),
 						unsubscribeUrl,
-						userId
+						userId,
+						idempotencyKey
 					}, attachments => this.toResendAttachments(attachments));
 				} else if (useCloudflareEmail) {
 				sendResult = await this.sendByCloudflareEmail(c, {
@@ -563,7 +567,7 @@ const emailService = {
 		emailData.content = html;
 		emailData.text = text;
 		emailData.accountId = accountId;
-		emailData.status = useCloudflareEmail && !useSes ? emailConst.status.DELIVERED : emailConst.status.SENT;
+		emailData.status = useCloudflareEmail && !useElasticEmail ? emailConst.status.DELIVERED : emailConst.status.SENT;
 		emailData.type = emailConst.type.SEND;
 		emailData.userId = userId;
 		emailData.resendEmailId = data?.id;
@@ -606,7 +610,7 @@ const emailService = {
 				providerEmailId: data?.id,
 				provider
 			});
-			await trackingService.recordInitial(c, tracking, useCloudflareEmail && !useSes ? 'delivered' : 'sent');
+			await trackingService.recordInitial(c, tracking, useCloudflareEmail && !useElasticEmail ? 'delivered' : 'sent');
 		}
 
 		//保存内嵌附件
@@ -997,6 +1001,21 @@ const emailService = {
 			att.type = attConst.type.EMBED
 		})
 
+		return document.toString();
+	},
+
+	inlineImagesToPublicUrls(content, imageDataList, r2domain) {
+		if (!content || !imageDataList?.length) return content || '';
+		const origin = domainUtils.toOssDomain(r2domain);
+		if (!origin) throw new BizError('R2 public domain is required for Elastic Email inline images');
+		const { document } = parseHTML(content);
+		for (const img of Array.from(document.querySelectorAll('img'))) {
+			const src = img.getAttribute('src') || '';
+			if (!src.startsWith('cid:')) continue;
+			const cid = src.slice(4);
+			const image = imageDataList.find(item => String(item.contentId || '').replace(/^<|>$/g, '') === cid);
+			if (image?.key) img.setAttribute('src', `${origin}/${image.key}`);
+		}
 		return document.toString();
 	},
 

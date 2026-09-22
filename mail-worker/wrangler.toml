@@ -49,15 +49,18 @@ crons = ["*/5 * * * *", "0 16 * * *"]	#每5分钟重试发件任务，每天刷�
 
 
 [vars]
-AWS_SES_SNS_TOPIC_ARN = "arn:aws:sns:ap-southeast-1:795782340138:cloud-mail-ses-events"
 # Configure these as encrypted Worker secrets, not plain-text vars:
 # resend_webhook_secret_polyurea = "" # turean-polyurea.com Resend account (whsec_...)
 # resend_webhook_secret_coating = ""  # turean-coating.com Resend account (whsec_...)
-# AWS_SES_ACCESS_KEY_ID = ""            # encrypted secret
-# AWS_SES_SECRET_ACCESS_KEY = ""        # encrypted secret
-# AWS_SES_REGION = "ap-southeast-1"
-# AWS_SES_CONFIGURATION_SET = "cloud-mail-marketing"
-# SES_MARKETING_ENABLED = "false"       # keep false until SES production access is approved
+# ELASTIC_EMAIL_API_KEY = ""             # encrypted secret; grant SendHttp and ViewReports
+# ELASTIC_EMAIL_ENABLED = "false"         # enable after the sending domains are verified
+# ELASTIC_EMAIL_API_BASE_URL = "https://api.elasticemail.com/v4"
+# ELASTIC_EMAIL_FROM_LOCAL_PART = "marketing"
+# ELASTIC_EMAIL_DAILY_RECIPIENT_LIMIT = "10000"
+# AI_REQUESTS_PER_MINUTE = "10"
+# DEEPSEEK_TIMEOUT_MS = "30000"
+# DEEPSEEK_TIMEOUT_MS = "30000"
+# AI_REQUESTS_PER_MINUTE = "10"
 #ai_model = ""			#ai模型,不填默认使用@cf/meta/llama-3.1-8b-instruct
 #analysis_cache = false			#是否开启分析数据缓存
 #orm_log = false			#是否sql日志
